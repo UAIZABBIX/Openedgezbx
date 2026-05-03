@@ -1,0 +1,9 @@
+O **Projeto OpenEdgeZBX** nasce como uma iniciativa técnica e colaborativa voltada à integração entre dois mundos essenciais no contexto corporativo: o banco de dados **Progress OpenEdge RDBMS** e a robusta plataforma de monitoramento **Zabbix**. Seu principal objetivo é disponibilizar um agente especializado capaz de coletar, estruturar e disponibilizar métricas críticas de desempenho, disponibilidade e saúde dos ambientes OpenEdge, permitindo uma gestão proativa e orientada a dados.
+
+Desenvolvido de forma livre e independente por **Thiago Santana** em conjunto com a comunidade **UAIZABBIX**, o OpenEdgeZBX representa a força da colaboração técnica e do compartilhamento de conhecimento. A iniciativa reflete o espírito comunitário de Minas Gerais, onde a troca de experiências, a construção coletiva e o apoio mútuo são pilares fundamentais.
+
+O agente atua diretamente na coleta de informações estratégicas do banco de dados, como estatísticas de buffers, transações, I/O, checkpoints, áreas de armazenamento e indicadores de performance extraídos das VSTs (Virtual System Tables) do OpenEdge. Esses dados são estruturados em formato compatível com o Zabbix, possibilitando a criação de templates avançados, dashboards analíticos e mecanismos de alertas inteligentes.
+
+Licenciado sob a **Licença GPL (General Public License)**, o OpenEdgeZBX garante liberdade total de uso, modificação e distribuição, incentivando a evolução contínua da solução e sua adaptação às mais diversas realidades organizacionais. Essa escolha reforça o compromisso do projeto com a transparência, a inovação aberta e o fortalecimento do ecossistema de monitoramento.
+
+Mais do que uma ferramenta, o OpenEdgeZBX é um movimento: uma ponte entre tecnologia e comunidade, que transforma conhecimento técnico em valor prático para operações críticas, promovendo maior visibilidade, controle e confiabilidade dos ambientes que utilizam o Progress OpenEdge.
