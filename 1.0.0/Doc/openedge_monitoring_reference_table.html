@@ -1,0 +1,326 @@
+<style>
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.tbl-wrap{padding:1rem 0}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.fb{padding:5px 14px;border-radius:20px;border:0.5px solid var(--color-border-secondary);background:transparent;font-size:13px;color:var(--color-text-secondary);cursor:pointer;transition:background .15s,color .15s}
+.fb.active,.fb:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.fb.active{border-color:var(--color-border-primary)}
+table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+thead th{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:0.5px solid var(--color-border-secondary);text-align:left}
+thead th:nth-child(1){width:22%}
+thead th:nth-child(2){width:13%}
+thead th:nth-child(3){width:16%}
+thead th:nth-child(4){width:16%}
+thead th:nth-child(5){width:16%}
+thead th:nth-child(6){width:17%}
+tbody tr{border-bottom:0.5px solid var(--color-border-tertiary);transition:background .1s}
+tbody tr:hover{background:var(--color-background-secondary)}
+td{padding:9px 10px;color:var(--color-text-primary);vertical-align:middle;word-break:break-word}
+td:nth-child(2){color:var(--color-text-secondary);font-size:12px}
+.cat-pill{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:500;white-space:nowrap}
+.cat-io{background:#E1F5EE;color:#085041}
+.cat-mem{background:#E6F1FB;color:#0C447C}
+.cat-trx{background:#FAEEDA;color:#633806}
+.cat-lck{background:#FAECE7;color:#712B13}
+.cat-con{background:#EAF3DE;color:#27500A}
+.st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;flex-shrink:0}
+.ok{background:#1D9E75}.warn{background:#BA7517}.crit{background:#E24B4A}
+.val-cell{font-size:12px;line-height:1.5;color:var(--color-text-primary)}
+.val-ok{color:#085041}
+.val-warn{color:#633806}
+.val-crit{color:#791F1F}
+.src-tag{font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono)}
+.row-hidden{display:none}
+</style>
+
+<h2 class="sr-only">Tabela de parâmetros de monitoramento OpenEdge Progress RDBMS com valores de referência por categoria</h2>
+
+<div class="tbl-wrap">
+<div class="filter-bar">
+  <button class="fb active" onclick="filter('all',this)">Todos</button>
+  <button class="fb" onclick="filter('io',this)">I/O e Armazenamento</button>
+  <button class="fb" onclick="filter('mem',this)">Memória e Buffers</button>
+  <button class="fb" onclick="filter('trx',this)">Transações</button>
+  <button class="fb" onclick="filter('lck',this)">Bloqueios</button>
+  <button class="fb" onclick="filter('con',this)">Conectividade</button>
+</div>
+
+<table>
+<thead>
+  <tr>
+    <th>Parâmetro</th>
+    <th>Categoria</th>
+    <th><span class="st ok"></span>Saudável</th>
+    <th><span class="st warn"></span>Atenção</th>
+    <th><span class="st crit"></span>Crítico</th>
+    <th>Fonte / VST</th>
+  </tr>
+</thead>
+<tbody>
+
+<tr data-cat="io">
+  <td>Buffer hit ratio</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&ge; 95%</td>
+  <td class="val-cell val-warn">90% – 94%</td>
+  <td class="val-cell val-crit">&lt; 90%</td>
+  <td class="src-tag">_ActBuffer<br>_UserIO</td>
+</tr>
+
+<tr data-cat="io">
+  <td>Reads físicos por segundo</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&lt; 50/s</td>
+  <td class="val-cell val-warn">50 – 200/s</td>
+  <td class="val-cell val-crit">&gt; 200/s</td>
+  <td class="src-tag">_ActIOType<br>_UserIO</td>
+</tr>
+
+<tr data-cat="io">
+  <td>Writes físicos por segundo</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&lt; 30/s</td>
+  <td class="val-cell val-warn">30 – 100/s</td>
+  <td class="val-cell val-crit">&gt; 100/s</td>
+  <td class="src-tag">_ActIOType<br>_UserIO</td>
+</tr>
+
+<tr data-cat="io">
+  <td>Checkpoint frequency</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&lt; 1 / min</td>
+  <td class="val-cell val-warn">1 – 5 / min</td>
+  <td class="val-cell val-crit">&gt; 5 / min</td>
+  <td class="src-tag">_ActSummary</td>
+</tr>
+
+<tr data-cat="io">
+  <td>BI log — utilização</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&lt; 50%</td>
+  <td class="val-cell val-warn">50% – 75%</td>
+  <td class="val-cell val-crit">&gt; 75%</td>
+  <td class="src-tag">_ActBILog<br>_BICluster</td>
+</tr>
+
+<tr data-cat="io">
+  <td>AI log — crescimento/hora</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">Estável / previsível</td>
+  <td class="val-cell val-warn">Crescimento +30% s/ causa</td>
+  <td class="val-cell val-crit">Crescimento exponencial</td>
+  <td class="src-tag">_ActAILog</td>
+</tr>
+
+<tr data-cat="io">
+  <td>Espaço livre em disco (dados)</td>
+  <td><span class="cat-pill cat-io">I/O</span></td>
+  <td class="val-cell val-ok">&gt; 30%</td>
+  <td class="val-cell val-warn">15% – 30%</td>
+  <td class="val-cell val-crit">&lt; 15%</td>
+  <td class="src-tag">_AreaStatus<br>SO / filesystem</td>
+</tr>
+
+<tr data-cat="mem">
+  <td>Buffer pool — % utilizado</td>
+  <td><span class="cat-pill cat-mem">Memória</span></td>
+  <td class="val-cell val-ok">&lt; 80%</td>
+  <td class="val-cell val-warn">80% – 90%</td>
+  <td class="val-cell val-crit">&gt; 90%</td>
+  <td class="src-tag">_Buffer<br>_ActBuffer</td>
+</tr>
+
+<tr data-cat="mem">
+  <td>LRU scans por segundo</td>
+  <td><span class="cat-pill cat-mem">Memória</span></td>
+  <td class="val-cell val-ok">&lt; 5/s</td>
+  <td class="val-cell val-warn">5 – 20/s</td>
+  <td class="val-cell val-crit">&gt; 20/s</td>
+  <td class="src-tag">_ActBuffer</td>
+</tr>
+
+<tr data-cat="mem">
+  <td>Lock table — % utilizado (-L)</td>
+  <td><span class="cat-pill cat-mem">Memória</span></td>
+  <td class="val-cell val-ok">&lt; 60%</td>
+  <td class="val-cell val-warn">60% – 80%</td>
+  <td class="val-cell val-crit">&gt; 80%</td>
+  <td class="src-tag">_LockStat<br>_ActLock</td>
+</tr>
+
+<tr data-cat="mem">
+  <td>Shared memory — % uso</td>
+  <td><span class="cat-pill cat-mem">Memória</span></td>
+  <td class="val-cell val-ok">&lt; 70%</td>
+  <td class="val-cell val-warn">70% – 85%</td>
+  <td class="val-cell val-crit">&gt; 85%</td>
+  <td class="src-tag">_ActSummary<br>ipcs (SO)</td>
+</tr>
+
+<tr data-cat="mem">
+  <td>Hash chain length média</td>
+  <td><span class="cat-pill cat-mem">Memória</span></td>
+  <td class="val-cell val-ok">&lt; 2</td>
+  <td class="val-cell val-warn">2 – 5</td>
+  <td class="val-cell val-crit">&gt; 5</td>
+  <td class="src-tag">_ActBuffer</td>
+</tr>
+
+<tr data-cat="trx">
+  <td>Transações por segundo (TPS)</td>
+  <td><span class="cat-pill cat-trx">Transações</span></td>
+  <td class="val-cell val-ok">Dentro da baseline</td>
+  <td class="val-cell val-warn">&plusmn;30% da baseline</td>
+  <td class="val-cell val-crit">&gt;50% abaixo da baseline</td>
+  <td class="src-tag">_Trans<br>_ActSummary</td>
+</tr>
+
+<tr data-cat="trx">
+  <td>Transações longas ativas (&gt;60s)</td>
+  <td><span class="cat-pill cat-trx">Transações</span></td>
+  <td class="val-cell val-ok">0</td>
+  <td class="val-cell val-warn">1 – 2</td>
+  <td class="val-cell val-crit">&ge; 3</td>
+  <td class="src-tag">_Trans<br>_UserIO</td>
+</tr>
+
+<tr data-cat="trx">
+  <td>Taxa de rollback (%)</td>
+  <td><span class="cat-pill cat-trx">Transações</span></td>
+  <td class="val-cell val-ok">&lt; 1%</td>
+  <td class="val-cell val-warn">1% – 5%</td>
+  <td class="val-cell val-crit">&gt; 5%</td>
+  <td class="src-tag">_Trans<br>_ActSummary</td>
+</tr>
+
+<tr data-cat="trx">
+  <td>BI cluster — tamanho médio</td>
+  <td><span class="cat-pill cat-trx">Transações</span></td>
+  <td class="val-cell val-ok">Próximo ao -bi</td>
+  <td class="val-cell val-warn">2x o valor de -bi</td>
+  <td class="val-cell val-crit">&gt;3x o valor de -bi</td>
+  <td class="src-tag">_BICluster</td>
+</tr>
+
+<tr data-cat="trx">
+  <td>Duração média de transação</td>
+  <td><span class="cat-pill cat-trx">Transações</span></td>
+  <td class="val-cell val-ok">&lt; 5s</td>
+  <td class="val-cell val-warn">5s – 30s</td>
+  <td class="val-cell val-crit">&gt; 30s</td>
+  <td class="src-tag">_Trans</td>
+</tr>
+
+<tr data-cat="lck">
+  <td>Lock waits por segundo</td>
+  <td><span class="cat-pill cat-lck">Bloqueios</span></td>
+  <td class="val-cell val-ok">0 – 2/s</td>
+  <td class="val-cell val-warn">2 – 10/s</td>
+  <td class="val-cell val-crit">&gt; 10/s</td>
+  <td class="src-tag">_LockStat<br>_ActLock</td>
+</tr>
+
+<tr data-cat="lck">
+  <td>Lock timeouts por hora</td>
+  <td><span class="cat-pill cat-lck">Bloqueios</span></td>
+  <td class="val-cell val-ok">0</td>
+  <td class="val-cell val-warn">1 – 5/h</td>
+  <td class="val-cell val-crit">&gt; 5/h</td>
+  <td class="src-tag">_LockStat</td>
+</tr>
+
+<tr data-cat="lck">
+  <td>Deadlocks por hora</td>
+  <td><span class="cat-pill cat-lck">Bloqueios</span></td>
+  <td class="val-cell val-ok">0</td>
+  <td class="val-cell val-warn">1 – 2/h</td>
+  <td class="val-cell val-crit">&gt; 2/h</td>
+  <td class="src-tag">_LockStat<br>db.lg</td>
+</tr>
+
+<tr data-cat="lck">
+  <td>Record locks ativos totais</td>
+  <td><span class="cat-pill cat-lck">Bloqueios</span></td>
+  <td class="val-cell val-ok">&lt; 30% do limite -L</td>
+  <td class="val-cell val-warn">30% – 60% do limite -L</td>
+  <td class="val-cell val-crit">&gt; 60% do limite -L</td>
+  <td class="src-tag">_Lock<br>_LockStat</td>
+</tr>
+
+<tr data-cat="lck">
+  <td>Tempo médio de espera por lock</td>
+  <td><span class="cat-pill cat-lck">Bloqueios</span></td>
+  <td class="val-cell val-ok">&lt; 100ms</td>
+  <td class="val-cell val-warn">100ms – 500ms</td>
+  <td class="val-cell val-crit">&gt; 500ms</td>
+  <td class="src-tag">_LockStat</td>
+</tr>
+
+<tr data-cat="con">
+  <td>Conexões ativas / máximo (-n)</td>
+  <td><span class="cat-pill cat-con">Conexões</span></td>
+  <td class="val-cell val-ok">&lt; 70%</td>
+  <td class="val-cell val-warn">70% – 85%</td>
+  <td class="val-cell val-crit">&gt; 85%</td>
+  <td class="src-tag">_Connect<br>_UserIO</td>
+</tr>
+
+<tr data-cat="con">
+  <td>Sessões inativas (&gt;30min)</td>
+  <td><span class="cat-pill cat-con">Conexões</span></td>
+  <td class="val-cell val-ok">&lt; 5% das sessões</td>
+  <td class="val-cell val-warn">5% – 15%</td>
+  <td class="val-cell val-crit">&gt; 15%</td>
+  <td class="src-tag">_Connect<br>_UserIO</td>
+</tr>
+
+<tr data-cat="con">
+  <td>Erros de conexão por hora</td>
+  <td><span class="cat-pill cat-con">Conexões</span></td>
+  <td class="val-cell val-ok">0</td>
+  <td class="val-cell val-warn">1 – 5/h</td>
+  <td class="val-cell val-crit">&gt; 5/h</td>
+  <td class="src-tag">db.lg<br>NameServer log</td>
+</tr>
+
+<tr data-cat="con">
+  <td>AppServer — agentes disponíveis</td>
+  <td><span class="cat-pill cat-con">Conexões</span></td>
+  <td class="val-cell val-ok">&gt; 30% do pool</td>
+  <td class="val-cell val-warn">10% – 30%</td>
+  <td class="val-cell val-crit">&lt; 10%</td>
+  <td class="src-tag">oemanager<br>OEM/Pulse</td>
+</tr>
+
+<tr data-cat="con">
+  <td>NameServer — disponibilidade</td>
+  <td><span class="cat-pill cat-con">Conexões</span></td>
+  <td class="val-cell val-ok">100%</td>
+  <td class="val-cell val-warn">Reinicializações esporádicas</td>
+  <td class="val-cell val-crit">Indisponível / falha</td>
+  <td class="src-tag">nsman.log<br>OEM/Pulse</td>
+</tr>
+
+</tbody>
+</table>
+
+<div style="margin-top:14px;display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+  <span style="font-size:12px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px"><span class="st ok"></span>Saudável — operação normal</span>
+  <span style="font-size:12px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px"><span class="st warn"></span>Atenção — investigar e monitorar</span>
+  <span style="font-size:12px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:5px"><span class="st crit"></span>Crítico — ação imediata necessária</span>
+</div>
+</div>
+
+<script>
+function filter(cat, btn) {
+  document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('tbody tr').forEach(r => {
+    if (cat === 'all' || r.dataset.cat === cat) {
+      r.classList.remove('row-hidden');
+    } else {
+      r.classList.add('row-hidden');
+    }
+  });
+}
+</script>
