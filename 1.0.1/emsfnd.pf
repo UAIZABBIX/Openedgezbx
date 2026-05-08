@@ -1,7 +1,0 @@
--db emsfnd
--ld emsfnd
--H 192.168.0.124
--S 35000
--N TCP
--U sysprogress
--P sysprogress
