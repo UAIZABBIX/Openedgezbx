@@ -180,6 +180,30 @@ ENVEOF
     echo ""
 }
 
+# === FUNÇÃO: GERAR JSON OFFLINE COMPLETO =====================================
+#  Gera JSON com TODAS as chaves que os templates Zabbix v1.3.1 esperam.
+#  Sem isso, o Zabbix retorna "no data matches the specified path" no
+#  preprocessing JSONPath para qualquer chave ausente.
+#
+#  Argumentos:
+#    $1 = nome lógico do banco
+#    $2 = caminho físico
+#    $3 = arquivo de saída
+#    $4 = motivo (string para o campo notes/errors)
+# =============================================================================
+gen_offline_json() {
+    local _name="$1"
+    local _path="$2"
+    local _out="$3"
+    local _reason="$4"
+    local _now=$(date '+%Y-%m-%dT%H:%M:%S')
+    local _host=$(hostname 2>/dev/null || echo "unknown")
+
+    cat > "$_out" << OFFJSON
+{"collector":{"name":"openedgezbx","version":"1.3.2","language":"Progress ABL","generated_at":"${_now}","status":"error"},"database":{"logical_name":"${_name}","physical_name":"${_path}","physical_path":"${_path}","host":"${_host}","openedge_version":"unknown","db_status":"offline","pid":0,"uptime_seconds":0,"active_connections":0,"notes":"${_reason}"},"summary":{"health_status":"critical","error_count":1,"warning_count":0},"metrics":{"io":{"buffer_hit_ratio":0,"physical_reads_per_sec":0,"physical_writes_per_sec":0,"checkpoint_frequency_per_min":0,"db_block_size":0,"hi_water_total_blocks":0,"free_blocks":0,"logical_reads_total":0,"physical_reads_total":0,"db_writes_total":0,"areas_count":0,"log_file_size_mb":0,"log_file_size_bytes":0,"bi_log_size_gb":0,"bi_log_usage_percent":0,"bi_bytes_free":0,"bi_extents":0,"bi_cluster_hwm":0,"bi_current_cluster":0,"ai_log_size_gb":0,"ai_extents":0,"ai_current_extent":0},"memory":{"lru_scans_per_sec":0,"lock_table_current":0,"buffer_pool_current":0},"transactions":{"tps":0,"active_transactions":0,"long_transactions_over_60s":0,"longest_transaction_age_sec":0,"bi_cluster_avg_size_kb":0,"commits_total":0,"undos_total":0,"transactions_total":0},"locks":{"lock_waits_per_sec":0,"active_record_locks":0,"lock_waits_total":0},"connections":{"active_connections":0,"self_connections":0,"remote_connections":0,"batch_connections":0,"biw_process":0,"aiw_process":0,"wdog_process":0,"apw_process":0},"services":{"database_online":false},"configuration":{"db_create_date":"unknown","db_last_open_date":"unknown"},"license":{"lic_valid_users":0,"lic_current_connections":0,"lic_usage_percent":0,"lic_max_current":0},"storage":{"db_size_total_gb":0,"db_size_used_gb":0,"db_free_reusable_gb":0,"db_empty_unformatted_gb":0,"pct_free_reusable":0,"pct_consumed_hwm":0,"blocks_in_use":0,"total_blocks":0,"hi_water_mark":0,"most_locks_ever":0,"bi_size_gb":0,"pct_buffer_alloc":0,"pct_buffer_B2_alloc":0,"buffer_alloc_gb":0,"buffer_B2_alloc_gb":0,"large_files_enabled":false,"64bit_dbkeys_enabled":false,"large_keys_enabled":false,"64bit_sequences_enabled":false,"encryption_enabled":false,"auditing_enabled":false,"replication_enabled":false,"multitenancy_enabled":false,"cdc_enabled":false,"areas_at_risk_count":0,"areas_at_risk_names":"none","areas_with_fixed_last_extent":0,"areas_with_variable_last_extent":0},"backup":{"last_full_backup_date":"unknown","last_incr_backup_date":"unknown","minutes_since_full_backup":0,"minutes_since_incr_backup":0,"minutes_since_any_backup":0,"last_backup_type":"unknown"},"servers":{"total_brokers":0,"total_servers":0,"servers_4gl":0,"servers_sql":0,"users_4gl_current":0,"users_sql_current":0,"users_4gl_max":0,"users_sql_max":0,"total_pending_connections":0,"srv_bytes_received":0,"srv_bytes_sent":0,"srv_queries_received":0}},"errors":[{"metric":"database","message":"${_reason}","source":"openedgezbx_collector.sh","severity":"error"}]}
+OFFJSON
+}
+
 # === DETECÇÃO DE MODO ========================================================
 
 # Argumento "setup" força reconfiguração
@@ -214,7 +238,11 @@ fi
 PROUTIL="$DLC/bin/proutil"
 PROGRES="$DLC/bin/mpro"
 
-# Programa coletor — usa .r (compilado) se existir, senão .p (fonte)
+# Programa coletor: usa .r se disponivel, senao .p.
+# A partir da v1.3.2 o programa qualifica todas as VSTs com DICTDB.
+# e cria o alias dinamicamente em runtime via LDBNAME(1). Isso torna
+# o .r INDEPENDENTE do banco de compilacao — pode ser compilado uma
+# vez contra qualquer banco e reusado em qualquer outro.
 if [ -f "$SCRIPT_DIR/openedgezbx.r" ]; then
     PROG_FILE="$SCRIPT_DIR/openedgezbx.r"
 else
@@ -301,6 +329,46 @@ DB_LIST=$("$PROUTIL" -C dbipcs 2>/dev/null \
     | sed 's/\.db$//' \
     | sort -u)
 
+# === FUNÇÃO: aplica filtros INCLUDE_DIRS / EXCLUDE_DIRS a um caminho =========
+#  Retorna 0 (true) se o banco PASSA pelos filtros, 1 (false) se DEVE ser
+#  ignorado. Usado tanto na coleta normal quanto no loop de bancos offline
+#  para garantir que filtros sao aplicados em TODOS os caminhos.
+# =============================================================================
+db_passes_filters() {
+    local _path="$1"
+    local _dir
+    _dir=$(dirname "$_path")
+
+    # EXCLUDE tem prioridade absoluta
+    if [ -n "$EXCLUDE_DIRS" ]; then
+        local _e
+        IFS=',' read -ra _EXCL_ARR <<< "$EXCLUDE_DIRS"
+        for _e in "${_EXCL_ARR[@]}"; do
+            _e=$(echo "$_e" | sed 's:/*$::')
+            if [ "$_dir" = "$_e" ] || [[ "$_dir" == "$_e"/* ]]; then
+                return 1
+            fi
+        done
+    fi
+
+    # INCLUDE: se preenchido, banco DEVE estar em um dos diretorios
+    if [ -n "$INCLUDE_DIRS" ]; then
+        local _i
+        IFS=',' read -ra _INCL_ARR <<< "$INCLUDE_DIRS"
+        for _i in "${_INCL_ARR[@]}"; do
+            _i=$(echo "$_i" | sed 's:/*$::')
+            if [ "$_dir" = "$_i" ] || [[ "$_dir" == "$_i"/* ]]; then
+                return 0
+            fi
+        done
+        # Nao casou com nenhum INCLUDE — rejeita
+        return 1
+    fi
+
+    # Sem INCLUDE e nao caiu em EXCLUDE — aceita
+    return 0
+}
+
 # === INVENTÁRIO: rastreia bancos conhecidos ================================
 #  O arquivo .inventory armazena a lista de bancos já coletados.
 #  Quando um banco desaparece do dbipcs (offline), geramos JSON offline
@@ -308,24 +376,67 @@ DB_LIST=$("$PROUTIL" -C dbipcs 2>/dev/null \
 # ===========================================================================
 INVENTORY_FILE="$SCRIPT_DIR/.openedgezbx_inventory"
 
-# Atualiza inventário com bancos atualmente online
+# Aplica filtros INCLUDE/EXCLUDE ao DB_LIST atual antes de qualquer coisa.
+# Bancos filtrados nao entram no inventario nem na coleta.
+DB_LIST_FILTERED=""
 if [ -n "$DB_LIST" ]; then
-    # Merge: bancos atuais + inventário anterior (sem duplicatas)
+    while IFS= read -r _dbpath; do
+        [ -z "$_dbpath" ] && continue
+        if db_passes_filters "$_dbpath"; then
+            DB_LIST_FILTERED="${DB_LIST_FILTERED}${_dbpath}
+"
+        fi
+    done <<< "$DB_LIST"
+    # Remove trailing newline e linhas vazias
+    DB_LIST_FILTERED=$(echo "$DB_LIST_FILTERED" | grep -v "^$" | sort -u)
+fi
+
+# Atualiza inventário com bancos atualmente online (apos filtros).
+# Tambem aplica filtros ao inventario antigo, removendo entradas que
+# nao casam mais com a configuracao atual de INCLUDE/EXCLUDE.
+if [ -n "$DB_LIST_FILTERED" ]; then
     if [ -f "$INVENTORY_FILE" ]; then
-        KNOWN_DBS=$(cat "$INVENTORY_FILE" | sort -u)
-        ALL_DBS=$(echo -e "${DB_LIST}\n${KNOWN_DBS}" | sort -u)
+        # Filtra inventario antigo aplicando os mesmos criterios
+        FILTERED_KNOWN=""
+        while IFS= read -r _knowndb; do
+            [ -z "$_knowndb" ] && continue
+            if db_passes_filters "$_knowndb"; then
+                FILTERED_KNOWN="${FILTERED_KNOWN}${_knowndb}
+"
+            fi
+        done < "$INVENTORY_FILE"
+        FILTERED_KNOWN=$(echo "$FILTERED_KNOWN" | grep -v "^$" | sort -u)
+        ALL_DBS=$(echo -e "${DB_LIST_FILTERED}\n${FILTERED_KNOWN}" | grep -v "^$" | sort -u)
     else
-        ALL_DBS="$DB_LIST"
+        ALL_DBS="$DB_LIST_FILTERED"
     fi
-    # Salva inventário atualizado
     echo "$ALL_DBS" > "$INVENTORY_FILE"
+    # Substitui DB_LIST pela versao filtrada (usado no loop de coleta)
+    DB_LIST="$DB_LIST_FILTERED"
 else
-    # Nenhum banco online — usa inventário anterior se existir
+    # Nenhum banco online (ou todos filtrados) — usa inventario filtrado
+    DB_LIST=""
     if [ -f "$INVENTORY_FILE" ]; then
-        ALL_DBS=$(cat "$INVENTORY_FILE" | sort -u)
+        FILTERED_KNOWN=""
+        while IFS= read -r _knowndb; do
+            [ -z "$_knowndb" ] && continue
+            if db_passes_filters "$_knowndb"; then
+                FILTERED_KNOWN="${FILTERED_KNOWN}${_knowndb}
+"
+            fi
+        done < "$INVENTORY_FILE"
+        FILTERED_KNOWN=$(echo "$FILTERED_KNOWN" | grep -v "^$" | sort -u)
+        if [ -n "$FILTERED_KNOWN" ]; then
+            echo "$FILTERED_KNOWN" > "$INVENTORY_FILE"
+            ALL_DBS="$FILTERED_KNOWN"
+        else
+            # Inventario inteiro foi filtrado — limpa o arquivo
+            > "$INVENTORY_FILE"
+            ALL_DBS=""
+        fi
     else
-        echo "[AVISO] Nenhum banco encontrado e nenhum inventário anterior."
-        echo "        Verifique se há bancos rodando neste servidor."
+        echo "[AVISO] Nenhum banco apos filtros e nenhum inventario anterior."
+        echo "        Verifique INCLUDE_DIRS / EXCLUDE_DIRS no .env."
         exit 0
     fi
 fi
@@ -343,86 +454,12 @@ if [ -f "$INVENTORY_FILE" ]; then
 fi
 
 if [ -z "$DB_LIST" ]; then
-    echo "[AVISO] Nenhum banco online encontrado via dbipcs."
+    echo "[AVISO] Nenhum banco online apos filtros INCLUDE/EXCLUDE."
     DB_TOTAL=0
 else
     DB_TOTAL=$(echo "$DB_LIST" | wc -l)
 fi
-echo "[INFO] $DB_TOTAL banco(s) online encontrado(s) no dbipcs."
-
-# === FILTRO DE DIRETÓRIOS =====================================================
-#  INCLUDE_DIRS: se preenchido, mantém SOMENTE bancos cujo diretório
-#                corresponde a um dos caminhos da lista.
-#  EXCLUDE_DIRS: remove bancos cujo diretório corresponde a um dos
-#                caminhos da lista (tem prioridade sobre include).
-#  A comparação verifica se o diretório do banco COMEÇA com o filtro,
-#  permitindo que /producao/bancos capture /producao/bancos/subdir/db.
-# =============================================================================
-
-DB_FILTERED=""
-
-echo "$DB_LIST" | while read -r DBPATH; do
-    # Diretório onde o banco reside
-    DBDIR=$(dirname "$DBPATH")
-
-    # --- Verifica EXCLUDE primeiro (prioridade) ---
-    if [ -n "$EXCLUDE_DIRS" ]; then
-        EXCLUDED=false
-        IFS=',' read -ra EXCL_ARR <<< "$EXCLUDE_DIRS"
-        for EXCL in "${EXCL_ARR[@]}"; do
-            EXCL=$(echo "$EXCL" | sed 's:/*$::')  # remove / final
-            if [ "$DBDIR" = "$EXCL" ] || [[ "$DBDIR" == "$EXCL"/* ]]; then
-                EXCLUDED=true
-                break
-            fi
-        done
-        if [ "$EXCLUDED" = true ]; then
-            echo "[SKIP] $DBPATH (diretório excluído: $EXCL)"
-            continue
-        fi
-    fi
-
-    # --- Verifica INCLUDE (se configurado) ---
-    if [ -n "$INCLUDE_DIRS" ]; then
-        INCLUDED=false
-        IFS=',' read -ra INCL_ARR <<< "$INCLUDE_DIRS"
-        for INCL in "${INCL_ARR[@]}"; do
-            INCL=$(echo "$INCL" | sed 's:/*$::')  # remove / final
-            if [ "$DBDIR" = "$INCL" ] || [[ "$DBDIR" == "$INCL"/* ]]; then
-                INCLUDED=true
-                break
-            fi
-        done
-        if [ "$INCLUDED" = false ]; then
-            echo "[SKIP] $DBPATH (diretório não está nos permitidos)"
-            continue
-        fi
-    fi
-
-    # Banco aprovado pelos filtros
-    echo "$DBPATH" >> "$JSON_DIR/.db_filtered.tmp"
-done
-
-# Lê a lista filtrada do arquivo temporário
-if [ -f "$JSON_DIR/.db_filtered.tmp" ]; then
-    DB_FILTERED=$(cat "$JSON_DIR/.db_filtered.tmp")
-    rm -f "$JSON_DIR/.db_filtered.tmp"
-fi
-
-if [ -z "$DB_FILTERED" ]; then
-    echo ""
-    if [ -z "$OFFLINE_DBS" ]; then
-        echo "[AVISO] Nenhum banco restou após aplicar os filtros de diretório."
-        echo "        Verifique INCLUDE_DIRS e EXCLUDE_DIRS no arquivo:"
-        echo "        $ENV_FILE"
-    else
-        echo "[AVISO] Nenhum banco online após filtros. Processando bancos offline..."
-    fi
-    DB_LIST=""
-else
-    # Substitui a lista original pela filtrada
-    DB_LIST="$DB_FILTERED"
-fi
+echo "[INFO] $DB_TOTAL banco(s) online (apos filtros) para coletar."
 
 SUCCESS=0
 FAIL=0
@@ -454,19 +491,17 @@ echo "$DB_LIST" | while read -r DBPATH; do
 
     echo -n "[....] Coletando $DBNAME ($DBPATH) ... "
 
-    # Monta o comando completo de execução
-    # - Conecta via shared memory (banco local carregado)
-    # - -ld define o nome lógico
-    # - -b batch, -q quiet
-    # - AUTH_PARAMS: credenciais (se configuradas)
-    # - EXTRA_PARAMS: parâmetros extras do .env
-    # - DEBUG_PARAM: modo debug (se ativado)
-    # - 2>/dev/null descarta stderr
-    # - grep "^{" filtra apenas a linha JSON
+    # Monta o comando completo de execução.
+    # Captura saida bruta + stderr em arquivo temp para diagnostico
+    # quando mpro falha (banco "online" no dbipcs mas mpro nao conecta).
+    RAW_OUT="$JSON_DIR/.${OUTNAME}.raw"
     "$PROGRES" -db "$DBPATH" -ld "$DBNAME" -b -q \
         $AUTH_PARAMS $EXTRA_PARAMS $DEBUG_PARAM \
         -p "$PROG_FILE" \
-        2>/dev/null | grep "^{" > "$OUTFILE"
+        > "$RAW_OUT" 2>&1
+
+    # Filtra apenas linhas JSON (comecam com {)
+    grep "^{" "$RAW_OUT" > "$OUTFILE"
 
     # Valida o JSON gerado
     if [ -s "$OUTFILE" ]; then
@@ -476,21 +511,27 @@ echo "$DB_LIST" | while read -r DBPATH; do
             SIZE=$(wc -c < "$OUTFILE" | tr -d ' ')
             echo -e "\r[ OK ] Coletando $DBNAME -> $OUTFILE ($SIZE bytes)"
             SUCCESS=$((SUCCESS + 1))
+            rm -f "$RAW_OUT"
         else
-            echo -e "\r[WARN] Coletando $DBNAME -> JSON possivelmente inválido"
+            echo -e "\r[WARN] Coletando $DBNAME -> JSON possivelmente invalido"
+            echo "       Saida bruta em: $RAW_OUT"
         fi
     else
         # ============================================================
-        # BANCO OFFLINE: gera JSON mínimo para que o Zabbix detecte
-        # via trigger "Database OFFLINE" (database_online = false).
-        # Sem este JSON, o Zabbix só detectaria via "no data" (10min).
+        # BANCO OFFLINE: gera JSON completo (todas as chaves esperadas
+        # pelo template Zabbix v1.3.1+) para que o Zabbix detecte via
+        # trigger "Database OFFLINE" (database_online = false) sem erros
+        # de JSONPath em chaves ausentes.
         # ============================================================
-        NOW_ISO=$(date '+%Y-%m-%dT%H:%M:%S')
-        HOSTNAME_LOCAL=$(hostname 2>/dev/null || echo "unknown")
-        cat > "$OUTFILE" << OFFJSON
-{"collector":{"name":"openedgezbx","version":"1.2.0","language":"Progress ABL","generated_at":"${NOW_ISO}","status":"error"},"database":{"logical_name":"${DBNAME}","physical_name":"${DBPATH}","physical_path":"${DBPATH}","host":"${HOSTNAME_LOCAL}","openedge_version":"unknown","db_status":"offline","pid":0,"uptime_seconds":0,"active_connections":0,"notes":"Banco offline ou inacessível — coleta via mpro falhou"},"summary":{"health_status":"critical","error_count":1,"warning_count":0},"metrics":{"io":{"buffer_hit_ratio":null},"memory":{},"transactions":{"tps":0,"active_transactions":0},"locks":{"lock_waits_per_sec":0,"active_record_locks":0},"connections":{"active_connections":0,"self_connections":0,"remote_connections":0,"batch_connections":0,"biw_process":0,"aiw_process":0,"wdog_process":0,"apw_process":0},"services":{"database_online":false},"configuration":{},"license":{},"servers":{"total_brokers":0,"total_servers":0,"servers_4gl":0,"servers_sql":0}},"errors":[{"metric":"database","message":"Banco offline ou inacessível","source":"openedgezbx_collector.sh","severity":"error"}]}
-OFFJSON
+        # Captura ultima linha de erro do mpro para diagnostico
+        ERR_MSG=$(grep -v "^$" "$RAW_OUT" | grep -iE "error|fail|nao|denied|invalid|^\*\*" | tail -1 | tr -d '"' | cut -c1-200)
+        [ -z "$ERR_MSG" ] = ERR_MSG="mpro falhou - ver $RAW_OUT"
+
+        gen_offline_json "$DBNAME" "$DBPATH" "$OUTFILE" \
+            "Banco offline ou inacessivel - mpro: ${ERR_MSG}"
         echo -e "\r[DOWN] Coletando $DBNAME -> $OUTFILE (OFFLINE)"
+        echo "       Erro mpro: $ERR_MSG"
+        echo "       Saida bruta preservada em: $RAW_OUT"
         FAIL=$((FAIL + 1))
     fi
 
@@ -505,21 +546,46 @@ fi  # if [ -n "$DB_LIST" ]
 
 if [ -n "$OFFLINE_DBS" ]; then
     echo ""
-    echo "[WARN] Bancos OFFLINE detectados (não estão no dbipcs):"
+    echo "[WARN] Bancos OFFLINE detectados (nao estao no dbipcs):"
     echo "$OFFLINE_DBS" | while read -r OFFPATH; do
         [ -z "$OFFPATH" ] && continue
+
+        # Aplica filtros INCLUDE/EXCLUDE tambem aos bancos offline.
+        # Sem isso, bancos de diretorios excluidos que ja estavam no
+        # inventario continuariam gerando JSON offline indevidamente.
+        if ! db_passes_filters "$OFFPATH"; then
+            echo "  [SKIP] $OFFPATH (filtrado por INCLUDE/EXCLUDE)"
+            continue
+        fi
+
         OFFNAME=$(basename "$OFFPATH")
         OFFOUTNAME=$(echo "$OFFPATH" | sed 's:^/::' | tr '/' '_')
         OFFOUTFILE="$JSON_DIR/${OFFOUTNAME}.json"
-        NOW_ISO=$(date '+%Y-%m-%dT%H:%M:%S')
-        HOSTNAME_LOCAL=$(hostname 2>/dev/null || echo "unknown")
 
-        cat > "$OFFOUTFILE" << OFFJSON
-{"collector":{"name":"openedgezbx","version":"1.0.0","language":"Progress ABL","generated_at":"${NOW_ISO}","status":"error"},"database":{"logical_name":"${OFFNAME}","physical_name":"${OFFPATH}","physical_path":"${OFFPATH}","host":"${HOSTNAME_LOCAL}","openedge_version":"unknown","db_status":"offline","pid":0,"uptime_seconds":0,"active_connections":0,"notes":"Banco offline — não encontrado no dbipcs"},"summary":{"health_status":"critical","error_count":1,"warning_count":0},"metrics":{"io":{"buffer_hit_ratio":0,"physical_reads_per_sec":0,"physical_writes_per_sec":0},"memory":{"lock_table_current":0},"transactions":{"tps":0,"active_transactions":0,"long_transactions_over_60s":0},"locks":{"lock_waits_per_sec":0,"active_record_locks":0},"connections":{"active_connections":0,"self_connections":0,"remote_connections":0,"batch_connections":0,"biw_process":0,"aiw_process":0,"wdog_process":0,"apw_process":0},"services":{"database_online":false},"configuration":{},"license":{"lic_valid_users":0,"lic_current_connections":0,"lic_usage_percent":0},"servers":{"total_brokers":0,"total_servers":0,"servers_4gl":0,"servers_sql":0,"users_4gl_current":0,"users_sql_current":0},"storage":{"db_size_total_gb":0,"db_size_used_gb":0,"pct_free_reusable":0,"pct_consumed_hwm":0,"large_files_enabled":false,"areas_at_risk_count":0},"backup":{}},"errors":[{"metric":"database","message":"Banco offline — não encontrado no dbipcs","source":"openedgezbx_collector.sh","severity":"error"}]}
-OFFJSON
+        gen_offline_json "$OFFNAME" "$OFFPATH" "$OFFOUTFILE" \
+            "Banco offline - nao encontrado no dbipcs"
 
         echo "  [DOWN] $OFFNAME ($OFFPATH) -> $OFFOUTFILE"
         FAIL=$((FAIL + 1))
+    done
+fi
+
+# === LIMPEZA: remove JSONs de bancos que nao casam mais com os filtros =====
+# Apos mudar INCLUDE_DIRS/EXCLUDE_DIRS, JSONs antigos podem permanecer no
+# diretorio e continuar sendo lidos pelo Zabbix. Lemos o physical_path do
+# proprio JSON para verificar se passa pelos filtros atuais.
+if [ -d "$JSON_DIR" ]; then
+    for _jsonfile in "$JSON_DIR"/*.json; do
+        [ -f "$_jsonfile" ] || continue
+        # Extrai physical_path do JSON (primeiro match)
+        _phys=$(grep -o '"physical_path":"[^"]*"' "$_jsonfile" 2>/dev/null \
+                | head -1 \
+                | sed 's/"physical_path":"//; s/"$//')
+        [ -z "$_phys" ] && continue
+        if ! db_passes_filters "$_phys"; then
+            echo "  [CLEAN] Removendo JSON orfao filtrado: $(basename "$_jsonfile") ($_phys)"
+            rm -f "$_jsonfile"
+        fi
     done
 fi
 

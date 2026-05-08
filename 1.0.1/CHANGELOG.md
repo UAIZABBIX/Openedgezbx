@@ -2,6 +2,94 @@
 
 Todos os marcos relevantes do projeto `openedgezbx`.
 
+## [1.3.2] - 2026-04-14
+
+### Adicionado — Portabilidade do .r, filtros globais, _DbParams, auditoria de configuracao
+
+#### Portabilidade entre bancos via alias DICTDB
+- Todas as 50 referencias de VST qualificadas com `DICTDB.<tabela>` (FIND FIRST, FOR EACH, AVAILABLE, WHERE)
+- Adicionado `CREATE ALIAS DICTDB FOR DATABASE VALUE(LDBNAME(1)) NO-ERROR.` no MAIN-BLOCK
+- O `.r` compilado agora e PORTATIL — pode ser executado contra qualquer banco
+- **Resolve o erro `(1006) Database X not connected`** que aparecia ao mover o `.r` entre bancos
+- Atencao: `DELETE ALIAS DICTDB NO-ERROR.` causa erro 247 no compilador OE 12.2 — usar apenas `CREATE ALIAS` (substitui automaticamente)
+
+#### Filtros INCLUDE_DIRS/EXCLUDE_DIRS aplicados globalmente
+- Nova funcao `db_passes_filters()` no shell collector
+- Aplicada em 4 contextos:
+  1. Coleta normal (executa o `.p` apenas em bancos que passam no filtro)
+  2. Gravacao no inventario (so registra bancos filtrados)
+  3. Processamento de bancos offline (so gera JSON offline para bancos filtrados)
+  4. Limpeza de JSONs orfaos (le `physical_path` do proprio JSON e remove se nao passa filtro)
+- Bug anterior corrigido: bancos no inventario antigo sem filtros continuavam gerando JSON offline mesmo apos configurar EXCLUDE
+- Limpeza automatica de JSONs orfaos via leitura do `physical_path` do proprio JSON
+
+#### Deteccao correta de brokers/servers BOTH/4GL/SQL
+- `_Server-Type` no OE 12.2 so tem valores `"Login"`, `"Auto"`, `"Brokr"`, `"Inactive"` (NAO contem SQL/4GL)
+- Tipo real esta nos arrays paralelos `_SrvParam-Name[]` e `_SrvParam-Value[]`
+- Procurar indice onde `_SrvParam-Name = "-ServerType"` e ler `_SrvParam-Value`
+- Valores possiveis: `"ABL"`, `"4GL"`, `"SQL"`, `"BOTH"` (BOTH aceita ambos)
+- Servidores `"Inactive"` agora ignorados (eram contados antes)
+- Brokers `BOTH` contabilizados em ambos 4GL e SQL
+
+#### Novas metricas servers
+- `brokers_4gl`, `brokers_sql`, `brokers_both` (count por tipo de aceitacao)
+- `broker_ports` mostra ServerType real, ex: `"35000(BOTH/TCP)"`
+
+#### HWM correto via `_AreaStatus` quando `_DbStatus-HiWater = 0`
+- `_DbStatus-HiWater` reflete apenas a Schema Area, nao o banco todo
+- Fallback: se `iHiWater = 0`, soma `_AreaStatus-Hiwater` de todas as areas
+- Mesmo principio para `iFreeBlks` se a soma das areas for maior
+
+#### `_DbParams` como fonte definitiva de parametros de startup
+- `DBPARAM(1)` em ABL retorna apenas parametros do CLIENTE — `-B` aparecia como 0
+- Substituido parsing de `DBPARAM` por leitura direta de `_DbParams` (143 entradas tipicas)
+- Campos: `_DbParams-Name`, `_DbParams-Value`
+- VST `_Startup` NAO existe no schema OE 12.2 do user (erro 725)
+- Versao real do `.lg` capturada via `_DbParams` (nao mais via DBPARAM)
+
+#### Renomeacao `-B1` -> `-B2` em todo o projeto
+- `-B2` e o parametro alternativo correto (NAO `-B1`)
+- Variaveis ABL: `giParamB1` -> `giParamB2`, `dBuf1AllocPct` -> `dBuf2AllocPct`, `dBuf1AllocGB` -> `dBuf2AllocGB`
+- Chaves JSON: `pct_buffer_B1_alloc` -> `pct_buffer_B2_alloc`, `buffer_B1_alloc_gb` -> `buffer_B2_alloc_gb`, `startup_B1` -> `startup_B2`
+- Templates Zabbix: `pct_buf_b1` -> `pct_buf_b2`, `buf_b1_gb` -> `buf_b2_gb`
+- Nomes de graficos: "Buffer -B1" -> "Buffer -B2", "(-B vs -B1)" -> "(-B vs -B2)"
+
+#### Novos items prototypes para parametros de startup (6 items)
+- Startup -B, -B2, -L, -n, -spin, -bibufs
+- Todos lidos de `metrics.configuration.startup_*`
+
+#### Novos triggers de configuracao (7 triggers)
+- 3 triggers de threshold: -B, -L, -spin abaixo do recomendado
+- 4 triggers de auditoria via `change()`: -B, -L, -n, -spin alterados (qualquer mudanca entre coletas)
+- Novas macros: `{$OZBX_STARTUP_B_MIN}=5000`, `{$OZBX_STARTUP_L_MIN}=8192`, `{$OZBX_STARTUP_SPIN_MIN}=5000`
+
+#### Novos graficos prototypes (3 graficos)
+- "Brokers by Type (4GL/SQL/BOTH)" — stacked
+- "Startup Parameters (-B / -B2)"
+- "Startup Parameters (-L / -n)"
+
+#### JSON offline completo
+- Funcao `gen_offline_json()` no shell collector com 90+ chaves
+- Garante que todas as chaves esperadas pelo template existam mesmo quando banco offline
+- Evita erro JSONPath "no data matches the specified path"
+
+### Servidor de producao
+- `brzmgrdbmstotvs01` (Linux) substituiu `openedgerdbms001` como servidor principal de teste
+- Banco producao: `/producao/bancos/emsfnd`
+- Bancos descobertos pelo `dbipcs` em ambientes filtrados (dev/homol/teste)
+
+### VSTs novas utilizadas
+- `_DbParams` — parametros de startup do servidor (143 entradas)
+
+### Totais finais dos templates
+- **113 item prototypes** por banco (era 107 na v1.3.1)
+- **37 graph prototypes** por banco (era 35 na v1.3.1)
+- **26 trigger prototypes** por banco (era 19 na v1.3.1)
+- **20+ macros** configuraveis
+
+### Alterado
+- Bump de versao para 1.3.2
+
 ## [1.3.1] - 2026-04-14
 
 ### Adicionado — Inventario offline para deteccao automatica de bancos down

@@ -162,9 +162,9 @@ Apos vincular o template, aguarde o intervalo de discovery (padrao: 5 minutos).
 
 | Recurso | Quantidade |
 |---|---|
-| Item prototypes (dependent items com JSONPath) | 104 |
-| Graph prototypes | 34 |
-| Trigger prototypes | 19 |
+| Item prototypes (dependent items com JSONPath) | 113 |
+| Graph prototypes | 37 |
+| Trigger prototypes | 26 (inclui 7 novos de configuracao na v1.3.2: 3 threshold + 4 auditoria via `change()`) |
 
 ---
 
@@ -191,6 +191,9 @@ Ajuste no host ou template conforme seu ambiente:
 | `{$OZBX_BACKUP_FULL_CRIT}` | `2880` | Minutos sem full backup critical (48h) |
 | `{$OZBX_BACKUP_ANY_WARN}` | `1440` | Minutos sem qualquer backup warning |
 | `{$OZBX_BACKUP_ANY_CRIT}` | `2880` | Minutos sem qualquer backup critical |
+| `{$OZBX_STARTUP_B_MIN}` | `5000` | Minimo recomendado para `-B` (v1.3.2) |
+| `{$OZBX_STARTUP_L_MIN}` | `8192` | Minimo recomendado para `-L` (v1.3.2) |
+| `{$OZBX_STARTUP_SPIN_MIN}` | `5000` | Minimo recomendado para `-spin` (v1.3.2) |
 
 ---
 
@@ -217,12 +220,26 @@ Ajuste no host ou template conforme seu ambiente:
 | Areas at risk > 0 | Warning |
 | License usage >= 90% | Warning |
 | No data for 10 minutes | Warning |
+| **Startup -B abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -L abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -spin abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -B alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -L alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -n alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -spin alterado (auditoria, change()) (v1.3.2)** | Info |
+
+### Triggers de auditoria de configuracao (v1.3.2)
+
+A v1.3.2 introduz triggers que detectam **alteracoes** em parametros de startup entre coletas, usando a funcao `change()` do Zabbix:
+- Quando `-B`, `-L`, `-n` ou `-spin` muda de valor entre duas coletas, o trigger correspondente dispara em severidade `Info`
+- Util para registrar quando o DBA alterou `.pf` ou parametros do broker e reiniciou o banco
+- Os triggers de threshold (`-B`/`-L`/`-spin` abaixo do minimo) usam as macros `{$OZBX_STARTUP_*_MIN}`
 
 ---
 
-## 9. Graph prototypes (34 por banco)
+## 9. Graph prototypes (37 por banco)
 
-Os templates incluem 34 graph prototypes autodescobertos para cada banco, cobrindo:
+Os templates incluem 37 graph prototypes autodescobertos para cada banco, cobrindo:
 - Buffer hit ratio ao longo do tempo
 - Physical reads e writes por segundo
 - TPS (transacoes por segundo)
@@ -236,9 +253,12 @@ Os templates incluem 34 graph prototypes autodescobertos para cada banco, cobrin
 - Log File Size (MB)
 - Storage: tamanho total/usado/livre em GB
 - Storage: % consumido ate HWM e % livre reutilizavel
-- Storage: buffer -B/-B1 alocacao e memoria
+- Storage: buffer -B/-B2 alocacao e memoria
 - Backup: minutos desde ultimo full/incremental
 - Servers: contagem 4GL vs SQL, atividade
+- **Brokers by Type (4GL/SQL/BOTH) — stacked (v1.3.2)**
+- **Startup Parameters (-B / -B2) (v1.3.2)**
+- **Startup Parameters (-L / -n) (v1.3.2)**
 - Areas at risk
 - E outros indicadores de performance
 

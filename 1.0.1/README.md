@@ -2,11 +2,11 @@
 
 Sistema completo de monitoracao de bancos **Progress OpenEdge RDBMS** para **Zabbix**, composto por:
 
-1. **Coletor ABL** (`openedgezbx.p`) — programa Progress 4GL/ABL que consulta VSTs e emite JSON estruturado via STDOUT
-2. **Shell collector** (`openedgezbx_collector.sh`) — automacao de coleta com autodescoberta de bancos carregados, incluindo JSON minimo para bancos offline
-3. **Templates Zabbix 7.0** — autodiscovery, 104 item prototypes, 34 graph prototypes, 19 trigger prototypes
+1. **Coletor ABL** (`openedgezbx.p`) — programa Progress 4GL/ABL que consulta VSTs e emite JSON estruturado via STDOUT. **Portatil entre bancos** via alias `DICTDB` (todas as 50 referencias VST qualificadas com `DICTDB.`)
+2. **Shell collector** (`openedgezbx_collector.sh`) — automacao de coleta com autodescoberta de bancos carregados, filtros INCLUDE/EXCLUDE aplicados globalmente, JSON minimo completo (90+ chaves) para bancos offline e limpeza automatica de JSONs orfaos
+3. **Templates Zabbix 7.0** — autodiscovery, **113 item prototypes**, **37 graph prototypes**, **26 trigger prototypes**
 
-**Versao:** 1.0.0 — validado em producao no servidor `openedgerdbms001` (Linux), OpenEdge 12.2 e 12.8, Zabbix 7.0.25.
+**Versao:** 1.3.2 — validado em producao no servidor `brzmgrdbmstotvs01` (Linux), OpenEdge 12.2 e 12.8, Zabbix 7.0.25.
 
 ---
 
@@ -71,8 +71,8 @@ openedgezbx_collector.sh
 
 | Arquivo | Descricao |
 |---|---|
-| `openedgezbx.p` | Coletor ABL v1.3.0 (programa Progress 4GL/ABL principal) — storage, backup, servers, features, license, processos servico, log file size |
-| `openedgezbx_collector.sh` | Script shell de coleta automatizada com setup interativo, inventario offline e JSON offline |
+| `openedgezbx.p` | Coletor ABL v1.3.2 (programa Progress 4GL/ABL principal) — portatil via alias `DICTDB`; storage, backup, servers (BOTH/4GL/SQL via `_SrvParam`), features, license, processos servico, log file size, parametros de startup via `_DbParams` |
+| `openedgezbx_collector.sh` | Script shell de coleta automatizada com setup interativo, filtros globais, inventario offline, JSON offline completo (90+ chaves) e limpeza de orfaos |
 | `openedgezbx_collector.env` | Arquivo de configuracao gerado pelo setup (DLC, credenciais, filtros) |
 | `.openedgezbx_inventory` | Inventario de bancos conhecidos (gerado automaticamente pelo collector em runtime) |
 | `emsfnd.pf` | Arquivo .pf de conexao remota TCP (exemplo) |
@@ -142,6 +142,15 @@ Ver secao [Configuracao do Agent2](#configuracao-do-agent2) e o guia completo em
 ---
 
 ## Coletor ABL
+
+### Portabilidade entre bancos (v1.3.2)
+
+A partir da v1.3.2, o `.r` compilado e **portatil** — pode ser executado contra qualquer banco conectado, sem precisar recompilar para cada um. Isso e obtido por:
+- Todas as 50 referencias VST qualificadas com `DICTDB.<tabela>` (FIND FIRST, FOR EACH, AVAILABLE, WHERE)
+- No `MAIN-BLOCK`: `CREATE ALIAS DICTDB FOR DATABASE VALUE(LDBNAME(1)) NO-ERROR.`
+- **Resolve o erro `(1006) Database X not connected`** que aparecia ao mover o `.r` entre bancos
+
+**Atencao:** `DELETE ALIAS DICTDB NO-ERROR.` causa erro `(247)` no compilador OE 12.2 — usar **apenas** `CREATE ALIAS` (substitui automaticamente se ja existir).
 
 ### Execucao direta
 
@@ -223,10 +232,15 @@ O `openedgezbx_collector.sh` automatiza a coleta para todos os bancos carregados
 
 1. Carrega configuracoes do `.env`
 2. Lista bancos via `$DLC/bin/proutil -C dbipcs | grep Yes | awk '{print $NF}'`
-3. Aplica filtros INCLUDE_DIRS / EXCLUDE_DIRS
+3. **Aplica filtros INCLUDE_DIRS / EXCLUDE_DIRS globalmente** via funcao `db_passes_filters()` em 4 contextos:
+   - Coleta normal (executa o `.p` apenas em bancos que passam no filtro)
+   - Gravacao no inventario (so registra bancos filtrados)
+   - Processamento de bancos offline (so gera JSON offline para bancos filtrados)
+   - Limpeza de JSONs orfaos (le `physical_path` do proprio JSON e remove se nao passa filtro)
 4. Executa `$DLC/bin/mpro -db <banco> -b -q -p openedgezbx.p` para cada banco
 5. Grava JSON em `json_zbx/` com nome baseado no caminho (ex: `producao_bancos_emsfnd.json`)
-6. **Se mpro falhar**, gera JSON minimo com `database_online=false` (permite trigger de banco offline no Zabbix)
+6. **Se mpro falhar**, gera JSON minimo via `gen_offline_json()` com 90+ chaves e `database_online=false` (permite trigger de banco offline no Zabbix sem erros JSONPath)
+7. **Limpeza automatica de orfaos:** JSONs cujo `physical_path` nao passa nos filtros configurados sao removidos automaticamente
 
 ### Filtros INCLUDE/EXCLUDE
 
@@ -265,11 +279,22 @@ A partir da v1.3.1, o `openedgezbx_collector.sh` mantem um arquivo `.openedgezbx
 
 ### JSON offline gerado
 
-Quando um banco e detectado como offline, o collector gera um JSON com:
+Quando um banco e detectado como offline, o collector chama `gen_offline_json()` e gera um JSON com:
 - `database_online: false`
 - `db_status: "offline"`
-- Todas as secoes de metricas presentes com valores zerados (0/false)
-- Estrutura JSON completa para evitar erros de JSONPath no Zabbix
+- **90+ chaves cobrindo todas as secoes de metricas** (io, memory, transactions, locks, connections, services, configuration, license, storage, backup, servers)
+- Valores zerados (0/false) ou nulos consistentes
+- Estrutura JSON completa para evitar erros de JSONPath no Zabbix ("no data matches the specified path")
+
+### Filtros INCLUDE/EXCLUDE globais (v1.3.2)
+
+A partir da v1.3.2, os filtros configurados no `.env` (`INCLUDE_DIRS` / `EXCLUDE_DIRS`) sao aplicados em **todos** os contextos do collector. Isso resolve o bug em que bancos no inventario antigo continuavam gerando JSON offline mesmo apos configurar EXCLUDE.
+
+A funcao `db_passes_filters()` e chamada antes de:
+- Coletar metricas (mpro)
+- Gravar bancos no inventario
+- Processar bancos offline
+- Limpar JSONs orfaos (le o `physical_path` direto do proprio JSON)
 
 ### Arquivo de inventario
 
@@ -349,9 +374,9 @@ Guia completo em `AGENT2_SETUP.md`.
 3. Macro LLD: `{#PATHNAME}` (caminho absoluto do arquivo JSON)
 4. Para cada JSON descoberto, cria automaticamente todos os items, graphs e triggers
 
-### Graph prototypes (34 por banco)
+### Graph prototypes (37 por banco)
 
-Os templates incluem 34 graph prototypes autodescobertos por banco, cobrindo:
+Os templates incluem 37 graph prototypes autodescobertos por banco, cobrindo:
 - Buffer hit ratio ao longo do tempo
 - Physical reads/writes por segundo
 - TPS (transacoes por segundo)
@@ -365,13 +390,16 @@ Os templates incluem 34 graph prototypes autodescobertos por banco, cobrindo:
 - Log File Size (MB)
 - Storage: tamanho total/usado/livre em GB
 - Storage: % consumido ate HWM e % livre reutilizavel
-- Storage: buffer -B/-B1 alocacao e memoria
+- Storage: buffer -B/-B2 alocacao e memoria
 - Backup: minutos desde ultimo full/incremental
 - Servers: contagem 4GL vs SQL, atividade
+- **Brokers by Type (4GL/SQL/BOTH) — stacked (v1.3.2)**
+- **Startup Parameters (-B / -B2) (v1.3.2)**
+- **Startup Parameters (-L / -n) (v1.3.2)**
 - Areas at risk
 - E outros indicadores de performance
 
-### Trigger prototypes (19 por banco)
+### Trigger prototypes (26 por banco)
 
 | Trigger | Severidade |
 |---|---|
@@ -394,6 +422,13 @@ Os templates incluem 34 graph prototypes autodescobertos por banco, cobrindo:
 | Areas at risk > 0 | Warning |
 | License usage >= 90% | Warning |
 | No data for 10 minutes | Warning |
+| **Startup -B abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -L abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -spin abaixo do recomendado (v1.3.2)** | Warning |
+| **Startup -B alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -L alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -n alterado (auditoria, change()) (v1.3.2)** | Info |
+| **Startup -spin alterado (auditoria, change()) (v1.3.2)** | Info |
 
 ### Macros ajustaveis (thresholds)
 
@@ -416,6 +451,9 @@ Os templates incluem 34 graph prototypes autodescobertos por banco, cobrindo:
 | `{$OZBX_BACKUP_FULL_CRIT}` | `2880` | Minutos sem full backup critical (48h) |
 | `{$OZBX_BACKUP_ANY_WARN}` | `1440` | Minutos sem qualquer backup warning |
 | `{$OZBX_BACKUP_ANY_CRIT}` | `2880` | Minutos sem qualquer backup critical |
+| `{$OZBX_STARTUP_B_MIN}` | `5000` | Minimo recomendado para `-B` (v1.3.2) |
+| `{$OZBX_STARTUP_L_MIN}` | `8192` | Minimo recomendado para `-L` (v1.3.2) |
+| `{$OZBX_STARTUP_SPIN_MIN}` | `5000` | Minimo recomendado para `-spin` (v1.3.2) |
 
 ---
 
@@ -476,24 +514,32 @@ O modo debug inclui informacoes extras sobre:
 ### `metrics.storage` — Estrutura de blocos, capacidade e features
 `blocks_in_use`, `total_db_size_gb`, `used_db_size_gb`, `free_reusable_gb`,
 `unformatted_gb`, `free_reusable_pct`, `consumed_hwm_pct`,
-`buffer_b_alloc_pct`, `buffer_b1_alloc_pct`, `buffer_b_memory_gb`, `buffer_b1_memory_gb`,
+`buffer_b_alloc_pct`, `pct_buffer_B2_alloc`, `buffer_b_memory_gb`, `buffer_B2_alloc_gb`,
 `num_areas`, `num_locks`, `most_locks`, `bi_size`,
 `feat_large_files`, `feat_64bit_dbkeys`, `feat_large_keys`, `feat_64bit_sequences`,
 `feat_encryption`, `feat_auditing`, `feat_replication`, `feat_multitenancy`, `feat_cdc`,
 `areas_at_risk_count`, `areas_at_risk_names`,
 `areas_with_fixed_last_extent`, `areas_with_variable_last_extent`.
 
+**Nota v1.3.2:** se `_DbStatus-HiWater = 0` (Schema Area apenas), o coletor faz fallback somando `_AreaStatus-Hiwater` de todas as areas.
+
 ### `metrics.backup` — Monitoramento de backup
 `minutes_since_full_backup`, `minutes_since_incr_backup`,
 `minutes_since_any_backup`, `last_backup_type`.
 
-### `metrics.servers` — Brokers e servidores
-Contagem por tipo (4GL vs SQL), brokers, portas, current/max users, logins, pending,
-atividade: bytes/mensagens/records sent/received, queries.
+### `metrics.servers` — Brokers e servidores (v1.3.2)
+Contagem por tipo via `_SrvParam` (NAO `_Server-Type`):
+- `brokers_4gl`, `brokers_sql`, `brokers_both` — count por tipo de aceitacao
+- Brokers `BOTH` contabilizados em **ambos** 4GL e SQL
+- Servidores `Inactive` ignorados
+- `broker_ports` mostra ServerType real, ex: `"35000(BOTH/TCP)"`
+- Atividade: bytes/mensagens/records sent/received, queries
 
-### `metrics.configuration` — Parametros de Startup
-`startup_B`, `startup_B1`, `startup_L`, `startup_n`, `startup_spin`, `startup_bi`,
+### `metrics.configuration` — Parametros de Startup (v1.3.2 lidos de `_DbParams`)
+`startup_B`, `startup_B2`, `startup_L`, `startup_n`, `startup_spin`, `startup_bibufs`,
 `db_create_date`, `db_last_open_date`.
+
+**IMPORTANTE:** A partir da v1.3.2 os parametros sao lidos de `_DbParams` (143 entradas tipicas), pois `DBPARAM(1)` retorna apenas parametros do CLIENTE — fazia `-B` aparecer como 0. O parametro alternativo de buffer e **`-B2`** (NAO `-B1`).
 
 ---
 
@@ -516,10 +562,11 @@ atividade: bytes/mensagens/records sent/received, queries.
 | `_ActLock` | `_Lock-ExclWait`, `_Lock-ShrWait`, `_Lock-UpgWait`, `_Lock-RecGetWait` | lock_waits/s |
 | `_Trans` | `_Trans-State`, `_Trans-Duration` | transacoes ativas, longas, duracao |
 | `_License` | `_Lic-ActiveConns`, `_Lic-BatchConns`, `_Lic-CurrConns`, `_Lic-MaxActive`, `_Lic-MaxBatch`, `_Lic-MaxCurrent`, `_Lic-ValidUsers` etc. | licenciamento, usage % |
-| `_Servers` | tipo (4GL vs SQL), PID, porta, current/max users, logins, pending | brokers, servidores |
+| `_Servers` | `_Server-Num`, `_Server-Type` (Login/Auto/Brokr/Inactive), `_Server-PortNum`, `_Server-CurrUsers`, `_Server-MaxUsers`, `_Server-Logins`, `_Server-PendingConns`, **`_SrvParam-Name[]`/`_SrvParam-Value[]`** | brokers BOTH/4GL/SQL, portas, usuarios |
 | `_ActServer` | bytes/mensagens/records sent/received, queries | atividade de servidores |
+| `_DbParams` (v1.3.2) | `_DbParams-Name`, `_DbParams-Value` (143 entradas) | `-B`, `-B2`, `-L`, `-n`, `-spin`, `-bibufs` |
 | `FILE-INFO` | `FILE-SIZE` em `PDBNAME(1) + ".lg"` | log_file_size_mb, log_file_size_bytes |
-| `DBPARAM(1)` | (parsing de string) | -B, -B1, -L, -n, -spin, -bibufs |
+| ~~`DBPARAM(1)`~~ | (legado, descontinuado para startup params) | Apenas params do cliente — substituido por `_DbParams` na v1.3.2 |
 
 ### Nomes reais de `_Resrc-Name` (validados no OE 12.8)
 
@@ -546,7 +593,7 @@ Lista completa dos 27 registros: `Shared Memory`, `Record Lock`, `Schema Lock`, 
 
 6. **PID do processo** fixo em `0` — `_MyConnection` e ambiguo no OE 12.2+. Injetado externamente pelo shell collector.
 
-7. **`DBPARAM(1)`** em conexao remota retorna parametros separados por virgula e nao traz `-B`/`-B1`/`-L`/`-n` (server-side).
+7. **`DBPARAM(1)`** retorna apenas parametros do cliente (separados por virgula em conexoes remotas). NAO traz `-B`/`-B2`/`-L`/`-n` do startup do servidor — a partir da v1.3.2 esses parametros sao lidos diretamente de `_DbParams`. A VST `_Startup` NAO existe no schema OE 12.2 do user (erro 725).
 
 8. **`idle_sessions_over_30min`** nao e derivavel do `_Connect` (sem campo last-activity).
 
@@ -577,7 +624,9 @@ Lista completa dos 27 registros: `Shared Memory`, `Record Lock`, `Schema Lock`, 
 
 ### Convencoes
 
-- Toda VST acessada com `NO-LOCK`.
+- Toda VST acessada com `NO-LOCK` e **qualificada com `DICTDB.<tabela>`** (portabilidade do `.r` entre bancos).
+- Alias DICTDB criado uma vez no `MAIN-BLOCK`: `CREATE ALIAS DICTDB FOR DATABASE VALUE(LDBNAME(1)) NO-ERROR.`
+- **NUNCA usar `DELETE ALIAS DICTDB NO-ERROR.`** — causa erro `(247)` no compilador OE 12.2. `CREATE ALIAS` substitui automaticamente.
 - Todo `FIND` com `NO-ERROR` + checagem `IF AVAILABLE`.
 - Metricas indisponiveis retornam `null` com `observation`.
 - Metricas calculadas retornam `0` (nao `null`) quando divisor e zero.
@@ -585,11 +634,13 @@ Lista completa dos 27 registros: `Shared Memory`, `Record Lock`, `Schema Lock`, 
 - NUNCA usar aspas simples, `~"`, `{` ou `}` literais em strings ABL.
 - Numeros decimais < 1 devem ter zero a esquerda (`fnJsonNum` ja trata isso).
 - Para database features, usar `_Database-Feature` (NAO `_MstrBlk-integrity`).
+- Para tipo de broker (BOTH/4GL/SQL), usar `_SrvParam` (NAO `_Server-Type`).
+- Para parametros de startup, usar `_DbParams` (NAO `DBPARAM`).
 - Consultar `CHANGELOG.md` para historico de correcoes de campos VST.
 
 ---
 
 ## Licenca / Autoria
 
-Coletor `openedgezbx` v1.0.0 — Progress ABL — compativel com OpenEdge 12.2+ (validado em 12.2 e 12.8).
+Coletor `openedgezbx` v1.3.2 — Progress ABL — compativel com OpenEdge 12.2+ (validado em 12.2 e 12.8).
 Desenvolvido por Thiago Santana / UAIZABBIX.

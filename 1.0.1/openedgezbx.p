@@ -38,7 +38,7 @@ BLOCK-LEVEL ON ERROR UNDO, THROW.
    CONSTANTES DO COLETOR
    ==================================================================== */
 &SCOPED-DEFINE COLLECTOR_NAME    "openedgezbx"
-&SCOPED-DEFINE COLLECTOR_VERSION "1.1.0"
+&SCOPED-DEFINE COLLECTOR_VERSION "1.3.2"
 &SCOPED-DEFINE COLLECTOR_LANG    "Progress ABL"
 
 /* ====================================================================
@@ -84,7 +84,7 @@ DEFINE VARIABLE giParamL       AS INT64     NO-UNDO INITIAL ?.
 DEFINE VARIABLE giParamN       AS INT64     NO-UNDO INITIAL ?.
 DEFINE VARIABLE giParamSpin    AS INT64     NO-UNDO INITIAL ?.
 DEFINE VARIABLE giParamBi      AS INT64     NO-UNDO INITIAL ?.
-DEFINE VARIABLE giParamB1      AS INT64     NO-UNDO INITIAL ?.
+DEFINE VARIABLE giParamB2      AS INT64     NO-UNDO INITIAL ?.
 
 /* Caracteres especiais para montagem segura de JSON.
    Inicializados no MAIN-BLOCK antes de qualquer coleta.
@@ -499,8 +499,8 @@ PROCEDURE pCollectIdentification:
 
     /* ---- Estado do banco e tempo de início (uptime) ---- */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _DbStatus NO-LOCK NO-ERROR.
-        IF AVAILABLE _DbStatus THEN DO:
+        FIND FIRST DICTDB._DbStatus NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._DbStatus THEN DO:
             gcDbStatus = "online".
 
             /* _DbStatus-StartTime: pode ser CHARACTER formatado, INTEGER
@@ -519,8 +519,8 @@ PROCEDURE pCollectIdentification:
        INTERVAL(NOW, _DbStatus-StartTime) se indisponível. */
     gdtNow = NOW.
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActSummary NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActSummary AND _Summary-UpTime > 0 THEN
+        FIND FIRST DICTDB._ActSummary NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActSummary AND _Summary-UpTime > 0 THEN
             gdUptimeSec = DECIMAL(_Summary-UpTime).
     END.
     IF gdUptimeSec <= 1 AND gdtStartTime NE ? THEN
@@ -529,8 +529,8 @@ PROCEDURE pCollectIdentification:
 
     /* ---- Conexões ativas ---- */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Connect NO-LOCK
-            WHERE _Connect._Connect-Name <> ""
+        FOR EACH DICTDB._Connect NO-LOCK
+            WHERE DICTDB._Connect._Connect-Name <> ""
               AND _Connect._Connect-Name <> ?:
             iCount = iCount + 1.
         END.
@@ -600,8 +600,8 @@ PROCEDURE pCollectIO:
 
     /* ============== _ActBuffer: leituras e checkpoints ============== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActBuffer NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActBuffer THEN DO:
+        FIND FIRST DICTDB._ActBuffer NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActBuffer THEN DO:
             ASSIGN
                 dLogicRds    = DECIMAL(_Buffer-LogicRds)
                 dOSRds       = DECIMAL(_Buffer-OSRds).
@@ -615,8 +615,8 @@ PROCEDURE pCollectIO:
        Observação: checkpoints vêm de _ActSummary (_Summary-Chkpts) porque
        o campo _Buffer-Checkpoints NÃO existe no schema 12.2. ============ */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActSummary NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActSummary THEN DO:
+        FIND FIRST DICTDB._ActSummary NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActSummary THEN DO:
             ASSIGN
                 dDbReads     = DECIMAL(_Summary-DbReads)
                 dDbWrites    = DECIMAL(_Summary-DbWrites)
@@ -631,8 +631,8 @@ PROCEDURE pCollectIO:
        Observação: o block size do banco em si depende da área (Type II
        pode variar). Coletamos via _Area-blocksize logo abaixo. */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _MstrBlk NO-LOCK NO-ERROR.
-        IF AVAILABLE _MstrBlk THEN DO:
+        FIND FIRST DICTDB._MstrBlk NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._MstrBlk THEN DO:
             iBiBlkSize = INTEGER(_MstrBlk-biblksize) NO-ERROR.
             iAiBlkSize = INTEGER(_MstrBlk-aiblksize) NO-ERROR.
         END.
@@ -647,7 +647,7 @@ PROCEDURE pCollectIO:
     DO ON ERROR UNDO, LEAVE:
         DEFINE VARIABLE iTmpHw AS INT64 NO-UNDO.
         DEFINE VARIABLE iTmpFr AS INT64 NO-UNDO.
-        FOR EACH _AreaStatus NO-LOCK:
+        FOR EACH DICTDB._AreaStatus NO-LOCK:
             ASSIGN iTmpHw = INT64(_AreaStatus-Hiwater) NO-ERROR.
             ASSIGN iTmpFr = INT64(_AreaStatus-Freenum) NO-ERROR.
             IF iTmpHw <> ? THEN iHiWater  = iHiWater  + iTmpHw.
@@ -658,7 +658,7 @@ PROCEDURE pCollectIO:
 
     /* ============== _Area: tamanho de bloco mais comum ============== */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Area NO-LOCK WHERE _Area-number > 6:  /* ignora schema/control */
+        FOR EACH DICTDB._Area NO-LOCK WHERE _Area-number > 6:  /* ignora schema/control */
             IF iDbBlkSize = ? OR iDbBlkSize = 0 THEN
                 iDbBlkSize = INTEGER(_Area-blocksize) NO-ERROR.
         END.
@@ -666,15 +666,15 @@ PROCEDURE pCollectIO:
 
     /* ============== _ActBILog: atividade do BI (nomes validados) ====== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActBILog NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActBILog THEN
+        FIND FIRST DICTDB._ActBILog NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActBILog THEN
             dBiBytes = DECIMAL(_BiLog-BytesWrtn) NO-ERROR.
     END.
 
     /* ============== _ActAILog: crescimento do AI (nomes validados) == */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActAILog NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActAILog THEN DO:
+        FIND FIRST DICTDB._ActAILog NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActAILog THEN DO:
             dAiBytes = DECIMAL(_AiLog-BytesWritn) NO-ERROR.
             IF dAiBytes <> ? AND gdUptimeSec > 0 THEN
                 dAiGrowthHr = ROUND(dAiBytes / (gdUptimeSec / 3600), 2).
@@ -688,8 +688,8 @@ PROCEDURE pCollectIO:
        _Logging-BiBytesFree retorna bytes livres no BI — usado para
        calcular a % de utilização do BI log. ========================= */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _Logging NO-LOCK NO-ERROR.
-        IF AVAILABLE _Logging THEN DO:
+        FIND FIRST DICTDB._Logging NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._Logging THEN DO:
             iBiLogSize    = INT64(_Logging-BiLogSize)    NO-ERROR.
             iBiBytesFree  = INT64(_Logging-BiBytesFree)  NO-ERROR.
             iBiExtents    = INTEGER(_Logging-BiExtents)   NO-ERROR.
@@ -956,21 +956,25 @@ PROCEDURE pCollectMemory:
 
     /* ============== _ActBuffer: LRU skips ====================== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActBuffer NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActBuffer THEN DO:
+        FIND FIRST DICTDB._ActBuffer NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActBuffer THEN DO:
             dLruSkips  = DECIMAL(_Buffer-LRUSkips) NO-ERROR.
             IF dLruSkips <> ? THEN
                 dLruPerSec = ROUND(dLruSkips / gdUptimeSec, 2).
         END.
     END.
 
-    /* ============== _Resrc: Record Locks (lock table %) ==========
-       Nomes dos registros _Resrc podem variar entre ambientes.
-       Usamos BEGINS para busca parcial caso o nome exato difira.
-       Também coletamos TODOS os _Resrc-Name para diagnóstico. ==== */
+    /* ============== _Resrc: Record Locks e Buffer Pool ============
+       Coleta dados do _Resrc para metricas de memoria.
+       - "Record Lock" -> lock table atual
+       - "DB Buf Avail" -> buffers DISPONIVEIS (livres). Convertemos
+         para buffers EM USO via: -B - DB_Buf_Avail.
+         Em banco com carga, DB Buf Avail tipicamente e 0 (todos os
+         buffers estao alocados). =================================== */
     DO ON ERROR UNDO, LEAVE:
         DEFINE VARIABLE cResrcNames AS CHARACTER NO-UNDO INITIAL "".
-        FOR EACH _Resrc NO-LOCK:
+        DEFINE VARIABLE iBufAvail   AS INT64     NO-UNDO INITIAL ?.
+        FOR EACH DICTDB._Resrc NO-LOCK:
             IF cResrcNames > "" THEN cResrcNames = cResrcNames + ", ".
             cResrcNames = cResrcNames + _Resrc-Name.
 
@@ -978,8 +982,17 @@ PROCEDURE pCollectMemory:
                 iLockCur = INT64(_Resrc-Lock) NO-ERROR.
 
             IF _Resrc-Name = "DB Buf Avail" THEN
-                iBufCur = INT64(_Resrc-Lock) NO-ERROR.
+                iBufAvail = INT64(_Resrc-Lock) NO-ERROR.
         END.
+
+        /* Buffer Pool Current = -B - DB Buf Avail (buffers em uso).
+           Se -B nao disponivel, usa apenas o valor de Avail invertido. */
+        IF iBufAvail = ? THEN iBufAvail = 0.
+        IF giParamB <> ? AND giParamB > 0 THEN
+            iBufCur = giParamB - iBufAvail.
+        ELSE
+            iBufCur = 0.
+        IF iBufCur < 0 THEN iBufCur = 0.
 
         /* % uso lock table = atual / -L * 100  (se -L conhecido) */
         IF giParamL <> ? AND giParamL > 0 AND iLockCur <> ? THEN
@@ -1081,8 +1094,8 @@ PROCEDURE pCollectTransactions:
          _Summary-Commits (com 's'), _Summary-Undos (com 's'),
          _Summary-TransComm (transações committed). =============== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActSummary NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActSummary THEN DO:
+        FIND FIRST DICTDB._ActSummary NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActSummary THEN DO:
             dCommits = DECIMAL(_Summary-Commits)   NO-ERROR.
             dUndos   = DECIMAL(_Summary-Undos)     NO-ERROR.
             dTrans   = DECIMAL(_Summary-TransComm) NO-ERROR.
@@ -1098,8 +1111,8 @@ PROCEDURE pCollectTransactions:
 
     /* ============== _Trans: transações ativas e duração ========= */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Trans NO-LOCK
-            WHERE _Trans._Trans-State <> ""
+        FOR EACH DICTDB._Trans NO-LOCK
+            WHERE DICTDB._Trans._Trans-State <> ""
               AND _Trans._Trans-State <> ?:
 
             iTransDur = INTEGER(_Trans._Trans-Duration) NO-ERROR.
@@ -1121,8 +1134,8 @@ PROCEDURE pCollectTransactions:
 
     /* ============== _MstrBlk: BI cluster size ================== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _MstrBlk NO-LOCK NO-ERROR.
-        IF AVAILABLE _MstrBlk THEN
+        FIND FIRST DICTDB._MstrBlk NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._MstrBlk THEN
             iBiClusterKB = INTEGER(_MstrBlk-rlclsize) NO-ERROR.
     END.
 
@@ -1218,8 +1231,8 @@ PROCEDURE pCollectLocks:
          _Lock-RecGetWait (record-get waits)
        Todos validados contra o schema OE 12.2. ================== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _ActLock NO-LOCK NO-ERROR.
-        IF AVAILABLE _ActLock THEN DO:
+        FIND FIRST DICTDB._ActLock NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._ActLock THEN DO:
             dLockWaits = DECIMAL(_Lock-ExclWait)   NO-ERROR.
             dLockWaits = dLockWaits
                        + DECIMAL(_Lock-ShrWait)    NO-ERROR.
@@ -1235,10 +1248,10 @@ PROCEDURE pCollectLocks:
     /* ============== _Resrc: record locks atuais ===============
        Nome real no OE 12.x: "Record Lock" (sem 's') ========= */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _Resrc
+        FIND FIRST DICTDB._Resrc
             WHERE _Resrc-Name = "Record Lock"
             NO-LOCK NO-ERROR.
-        IF AVAILABLE _Resrc THEN
+        IF AVAILABLE DICTDB._Resrc THEN
             iActiveLocks = INT64(_Resrc-Lock) NO-ERROR.
     END.
 
@@ -1311,8 +1324,8 @@ PROCEDURE pCollectConnections:
        processos de serviço: BIW (BI Writer), AIW (AI Writer),
        WDOG (Watchdog), APW (Async Page Writer). ===================== */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Connect NO-LOCK
-            WHERE _Connect._Connect-Name <> ""
+        FOR EACH DICTDB._Connect NO-LOCK
+            WHERE DICTDB._Connect._Connect-Name <> ""
               AND _Connect._Connect-Name <> ?:
 
             iActive = iActive + 1.
@@ -1513,20 +1526,44 @@ PROCEDURE pCollectServers:
 
     /* Auxiliares */
     DEFINE VARIABLE cType           AS CHARACTER NO-UNDO.
+    DEFINE VARIABLE cTypeTrim       AS CHARACTER NO-UNDO.
     DEFINE VARIABLE iCurr           AS INTEGER   NO-UNDO.
     DEFINE VARIABLE iMax            AS INTEGER   NO-UNDO.
     DEFINE VARIABLE iPend           AS INTEGER   NO-UNDO.
     DEFINE VARIABLE iLog            AS INT64     NO-UNDO.
     DEFINE VARIABLE cBrokerPorts    AS CHARACTER NO-UNDO INITIAL "".
+    DEFINE VARIABLE cSrvType        AS CHARACTER NO-UNDO.
+    DEFINE VARIABLE iIdx            AS INTEGER   NO-UNDO.
+    DEFINE VARIABLE iExt            AS INTEGER   NO-UNDO.
+    DEFINE VARIABLE lIs4gl          AS LOGICAL   NO-UNDO.
+    DEFINE VARIABLE lIsSql          AS LOGICAL   NO-UNDO.
+
+    /* Contadores de brokers por tipo de aceitacao */
+    DEFINE VARIABLE iBroker4gl  AS INTEGER NO-UNDO INITIAL 0.
+    DEFINE VARIABLE iBrokerSql  AS INTEGER NO-UNDO INITIAL 0.
+    DEFINE VARIABLE iBrokerBoth AS INTEGER NO-UNDO INITIAL 0.
 
     /* ============== _Servers: brokers e servidores =====================
-       _Server-Type contém o tipo: "Broker", "Login", "4GL", "SQL",
-       "4GLSrv", "SQLSrv", "Serve" etc. — varia entre versões.
-       Classificamos: se contém "SQL" é SQL, se contém "4GL" ou "Serve"
-       é 4GL, "Broker"/"Login" são brokers. ========================== */
+       Estrutura real do _Servers no OE 12.2:
+         _Server-Type pode ser "Login", "Auto", "Inactive", "Brokr"
+         (com padding de espacos — comparar com TRIM).
+
+       O tipo SQL/4GL/BOTH NAO esta em _Server-Type. Esta nos arrays
+       paralelos _SrvParam-Name[] e _SrvParam-Value[] — buscamos a
+       posicao do parametro "-ServerType" e lemos o valor:
+         "ABL"  ou "4GL" -> servidor 4GL
+         "SQL"           -> servidor SQL
+         "BOTH"          -> aceita 4GL e SQL (broker hibrido)
+
+       Servidores Inactive sao slots reservados — ignorados. ========== */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Servers NO-LOCK:
-            cType = STRING(_Server-Type) NO-ERROR.
+        FOR EACH DICTDB._Servers NO-LOCK:
+            cType     = STRING(_Server-Type) NO-ERROR.
+            cTypeTrim = TRIM(cType).
+
+            /* Ignora slots inativos */
+            IF cTypeTrim = "Inactive" OR cTypeTrim = "" THEN NEXT.
+
             iCurr = INTEGER(_Server-CurrUsers) NO-ERROR.
             iMax  = INTEGER(_Server-MaxUsers)  NO-ERROR.
             iPend = INTEGER(_Server-PendConn)  NO-ERROR.
@@ -1537,28 +1574,56 @@ PROCEDURE pCollectServers:
             IF iPend = ? THEN iPend = 0.
             IF iLog  = ? THEN iLog  = 0.
 
-            /* Classifica como Broker ou Server */
-            IF cType = "Broker" OR cType = "Login" THEN DO:
+            /* Busca _SrvParam-Name = "-ServerType" e le valor correspondente.
+               Os campos sao arrays — usamos EXTENT para iterar e procurar. */
+            cSrvType = "".
+            iExt = EXTENT(_SrvParam-Name).
+            IF iExt = ? OR iExt = 0 THEN iExt = 0.
+            DO iIdx = 1 TO iExt:
+                IF _SrvParam-Name[iIdx] = "-ServerType" THEN DO:
+                    cSrvType = TRIM(STRING(_SrvParam-Value[iIdx])).
+                    LEAVE.
+                END.
+            END.
+
+            /* Classifica suporte do servidor por valor de -ServerType */
+            ASSIGN lIs4gl = FALSE
+                   lIsSql = FALSE.
+            CASE cSrvType:
+                WHEN "ABL"  THEN lIs4gl = TRUE.
+                WHEN "4GL"  THEN lIs4gl = TRUE.
+                WHEN "SQL"  THEN lIsSql = TRUE.
+                WHEN "BOTH" THEN ASSIGN lIs4gl = TRUE lIsSql = TRUE.
+                OTHERWISE        lIs4gl = TRUE.   /* default: 4GL */
+            END CASE.
+
+            /* Distingue Broker (Login/Brokr) de Server (Auto/Serve) */
+            IF cTypeTrim = "Login" OR cTypeTrim = "Brokr" THEN DO:
                 iTotalBrokers = iTotalBrokers + 1.
-                /* Coleta portas dos brokers para info */
+                IF lIs4gl AND lIsSql THEN iBrokerBoth = iBrokerBoth + 1.
+                ELSE IF lIsSql       THEN iBrokerSql  = iBrokerSql  + 1.
+                ELSE                      iBroker4gl  = iBroker4gl  + 1.
+
+                /* Lista portas dos brokers com tipo (4GL/SQL/BOTH) */
                 IF _Server-PortNum > 0 THEN DO:
                     IF cBrokerPorts > "" THEN cBrokerPorts = cBrokerPorts + ",".
                     cBrokerPorts = cBrokerPorts + STRING(_Server-PortNum)
-                                 + "(" + cType + "/" + _Server-Protocol + ")".
+                                 + "(" + (IF cSrvType = "" THEN "ABL" ELSE cSrvType)
+                                 + "/" + TRIM(_Server-Protocol) + ")".
                 END.
             END.
             ELSE DO:
+                /* Server (Auto/Serve) */
                 iTotalServers = iTotalServers + 1.
 
-                /* Classifica 4GL vs SQL */
-                IF INDEX(cType, "SQL") > 0 THEN DO:
+                IF lIsSql THEN DO:
                     iSqlServers   = iSqlServers   + 1.
                     iSqlCurrUsers = iSqlCurrUsers + iCurr.
                     iSqlMaxUsers  = iSqlMaxUsers  + iMax.
                     iSqlLogins    = iSqlLogins    + iLog.
                     iSqlPending   = iSqlPending   + iPend.
                 END.
-                ELSE DO:
+                IF lIs4gl THEN DO:
                     i4glServers   = i4glServers   + 1.
                     i4glCurrUsers = i4glCurrUsers + iCurr.
                     i4glMaxUsers  = i4glMaxUsers  + iMax.
@@ -1576,7 +1641,7 @@ PROCEDURE pCollectServers:
 
     /* ============== _ActServer: atividade de servidores =============== */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _ActServer NO-LOCK:
+        FOR EACH DICTDB._ActServer NO-LOCK:
             dTotalBytesRec  = dTotalBytesRec  + DECIMAL(_Server-ByteRec)  NO-ERROR.
             dTotalBytesSent = dTotalBytesSent + DECIMAL(_Server-ByteSent) NO-ERROR.
             dTotalMsgRec    = dTotalMsgRec    + DECIMAL(_Server-MsgRec)   NO-ERROR.
@@ -1608,6 +1673,24 @@ PROCEDURE pCollectServers:
                    "healthy", "", "",
                    "_Servers._Server-PortNum",
                    "Portas dos brokers: porta(tipo/protocolo).")
+
+        + "," + fnMetric("brokers_4gl",
+                   fnJsonInt(iBroker4gl), "brokers",
+                   "healthy", "", "",
+                   "_Servers WHERE Login + ServerType ABL/4GL",
+                   "Brokers configurados apenas para 4GL.")
+
+        + "," + fnMetric("brokers_sql",
+                   fnJsonInt(iBrokerSql), "brokers",
+                   "healthy", "", "",
+                   "_Servers WHERE Login + ServerType SQL",
+                   "Brokers configurados apenas para SQL.")
+
+        + "," + fnMetric("brokers_both",
+                   fnJsonInt(iBrokerBoth), "brokers",
+                   "healthy", "", "",
+                   "_Servers WHERE Login + ServerType BOTH",
+                   "Brokers hibridos que aceitam 4GL E SQL.")
 
         + "," + fnMetric("total_current_users",
                    fnJsonInt(iTotalCurrUsers), "users",
@@ -1778,9 +1861,9 @@ PROCEDURE pCollectStorage:
     DEFINE VARIABLE dConsumedPct     AS DECIMAL NO-UNDO INITIAL ?.
     DEFINE VARIABLE dBiSizeGB        AS DECIMAL NO-UNDO INITIAL ?.
     DEFINE VARIABLE dBufAllocPct     AS DECIMAL NO-UNDO INITIAL ?.
-    DEFINE VARIABLE dBuf1AllocPct    AS DECIMAL NO-UNDO INITIAL ?.
+    DEFINE VARIABLE dBuf2AllocPct    AS DECIMAL NO-UNDO INITIAL ?.
     DEFINE VARIABLE dBufAllocGB      AS DECIMAL NO-UNDO INITIAL ?.
-    DEFINE VARIABLE dBuf1AllocGB     AS DECIMAL NO-UNDO INITIAL ?.
+    DEFINE VARIABLE dBuf2AllocGB     AS DECIMAL NO-UNDO INITIAL ?.
 
     /* Constante para conversão bytes -> GB */
     DEFINE VARIABLE dGB AS DECIMAL NO-UNDO INITIAL 1073741824.  /* 1024^3 */
@@ -1814,8 +1897,8 @@ PROCEDURE pCollectStorage:
 
     /* ============== _DbStatus: leitura dos campos de blocos ========= */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _DbStatus NO-LOCK NO-ERROR.
-        IF AVAILABLE _DbStatus THEN DO:
+        FIND FIRST DICTDB._DbStatus NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._DbStatus THEN DO:
             iDbBlkSz    = INTEGER(_DbStatus-DbBlkSize) NO-ERROR.
             iHiWater    = INT64(_DbStatus-HiWater)     NO-ERROR.
             iFreeBlks   = INT64(_DbStatus-FreeBlks)    NO-ERROR.
@@ -1845,6 +1928,26 @@ PROCEDURE pCollectStorage:
     IF iRMFreeBlks = ? THEN iRMFreeBlks = 0.
     IF iDbBlkSz    = ? THEN iDbBlkSz    = 0.
     IF iBiSize     = ? THEN iBiSize     = 0.
+
+    /* Fallback: _DbStatus-HiWater pode vir 0 (so reflete a Schema Area).
+       Calculamos o HWM real somando _AreaStatus-Hiwater de todas as
+       areas. Tambem refazemos FreeBlks como soma de _AreaStatus-Freenum
+       quando _DbStatus-FreeBlks <= 0 ou parece subdimensionado. */
+    IF iHiWater = 0 OR iHiWater = ? THEN DO ON ERROR UNDO, LEAVE:
+        DEFINE VARIABLE iSumHwm  AS INT64 NO-UNDO INITIAL 0.
+        DEFINE VARIABLE iSumFree AS INT64 NO-UNDO INITIAL 0.
+        DEFINE VARIABLE iTmpHw   AS INT64 NO-UNDO.
+        DEFINE VARIABLE iTmpFr   AS INT64 NO-UNDO.
+        FOR EACH DICTDB._AreaStatus NO-LOCK:
+            iTmpHw = INT64(_AreaStatus-Hiwater) NO-ERROR.
+            iTmpFr = INT64(_AreaStatus-Freenum) NO-ERROR.
+            IF iTmpHw <> ? THEN iSumHwm  = iSumHwm  + iTmpHw.
+            IF iTmpFr <> ? THEN iSumFree = iSumFree + iTmpFr.
+        END.
+        IF iSumHwm > 0 THEN iHiWater = iSumHwm.
+        /* Atualiza FreeBlks tambem se a soma das areas for maior */
+        IF iSumFree > iFreeBlks THEN iFreeBlks = iSumFree.
+    END.
 
     /* Blocos efetivamente em uso = HiWater - FreeBlks */
     iBlocksInUse = iHiWater - iFreeBlks.
@@ -1893,20 +1996,20 @@ PROCEDURE pCollectStorage:
         dBufAllocPct = ROUND((giParamB / iTotalBlks) * 100, 2).
     ELSE dBufAllocPct = 0.
 
-    /* % do banco alocado em memória via -B1 (alternate buffer pool) */
-    IF giParamB1 <> ? AND iTotalBlks > 0 THEN
-        dBuf1AllocPct = ROUND((giParamB1 / iTotalBlks) * 100, 2).
-    ELSE dBuf1AllocPct = 0.
+    /* % do banco alocado em memória via -B2 (alternate buffer pool) */
+    IF giParamB2 <> ? AND iTotalBlks > 0 THEN
+        dBuf2AllocPct = ROUND((giParamB2 / iTotalBlks) * 100, 2).
+    ELSE dBuf2AllocPct = 0.
 
     /* Tamanho em GB alocado via -B = -B * DbBlkSize / 1024^3 */
     IF giParamB <> ? AND iDbBlkSz > 0 THEN
         dBufAllocGB = ROUND((giParamB * iDbBlkSz) / dGB, 4).
     ELSE dBufAllocGB = 0.
 
-    /* Tamanho em GB alocado via -B1 = -B1 * DbBlkSize / 1024^3 */
-    IF giParamB1 <> ? AND iDbBlkSz > 0 THEN
-        dBuf1AllocGB = ROUND((giParamB1 * iDbBlkSz) / dGB, 4).
-    ELSE dBuf1AllocGB = 0.
+    /* Tamanho em GB alocado via -B2 = -B2 * DbBlkSize / 1024^3 */
+    IF giParamB2 <> ? AND iDbBlkSz > 0 THEN
+        dBuf2AllocGB = ROUND((giParamB2 * iDbBlkSz) / dGB, 4).
+    ELSE dBuf2AllocGB = 0.
 
     /* ============== Database Features via _Database-Feature ==========
        VST definitiva que lista todas as features do banco com status.
@@ -1919,7 +2022,7 @@ PROCEDURE pCollectStorage:
          27 = Change Data Capture
        ================================================================ */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _Database-Feature NO-LOCK:
+        FOR EACH DICTDB._Database-Feature NO-LOCK:
             cFeatureName   = STRING(_DBFeature_Name)   NO-ERROR.
             cFeatureActive = STRING(_DBFeature_Active)  NO-ERROR.
 
@@ -1949,7 +2052,7 @@ PROCEDURE pCollectStorage:
        Tipo de extents: 37=fixo dados, 5=variável dados, 4=variável AI,
                          3=variável BI. ================================ */
     DO ON ERROR UNDO, LEAVE:
-        FOR EACH _AreaStatus NO-LOCK
+        FOR EACH DICTDB._AreaStatus NO-LOCK
             WHERE _AreaStatus-Areanum > 6:
 
             iAreaNum   = _AreaStatus-Areanum.
@@ -1966,8 +2069,8 @@ PROCEDURE pCollectStorage:
             /* Encontra o último extent desta área */
             iMaxExtNum  = 0.
             iLastExtType = 0.
-            FOR EACH _AreaExtent NO-LOCK
-                WHERE _AreaExtent._Area-number = iAreaNum:
+            FOR EACH DICTDB._AreaExtent NO-LOCK
+                WHERE DICTDB._AreaExtent._Area-number = iAreaNum:
                 IF _AreaExtent._Extent-number > iMaxExtNum THEN
                     ASSIGN
                         iMaxExtNum   = _AreaExtent._Extent-number
@@ -2096,11 +2199,11 @@ PROCEDURE pCollectStorage:
                    "(-B / TotalBlks) * 100",
                    "Percentual do banco alocado em memória via -B. Requer DBPARAM local.")
 
-        + "," + fnMetric("pct_buffer_B1_alloc",
-                   fnJsonNum(dBuf1AllocPct), "percent",
+        + "," + fnMetric("pct_buffer_B2_alloc",
+                   fnJsonNum(dBuf2AllocPct), "percent",
                    "healthy", "", "",
-                   "(-B1 / TotalBlks) * 100",
-                   "Percentual do banco alocado em alternate buffer pool -B1.")
+                   "(-B2 / TotalBlks) * 100",
+                   "Percentual do banco alocado em alternate buffer pool -B2.")
 
         + "," + fnMetric("buffer_alloc_gb",
                    fnJsonNum(dBufAllocGB), "GB",
@@ -2108,11 +2211,11 @@ PROCEDURE pCollectStorage:
                    "(-B * DbBlkSize) / 1024^3",
                    "Memória alocada pelo buffer pool -B em GB.")
 
-        + "," + fnMetric("buffer_B1_alloc_gb",
-                   fnJsonNum(dBuf1AllocGB), "GB",
+        + "," + fnMetric("buffer_B2_alloc_gb",
+                   fnJsonNum(dBuf2AllocGB), "GB",
                    "healthy", "", "",
-                   "(-B1 * DbBlkSize) / 1024^3",
-                   "Memória alocada pelo alternate buffer pool -B1 em GB.")
+                   "(-B2 * DbBlkSize) / 1024^3",
+                   "Memória alocada pelo alternate buffer pool -B2 em GB.")
 
         + "," + fnMetric("startup_B_blocks",
                    fnJsonInt(giParamB), "blocks",
@@ -2120,11 +2223,11 @@ PROCEDURE pCollectStorage:
                    "DBPARAM -B",
                    "Blocos alocados em memória via -B.")
 
-        + "," + fnMetric("startup_B1_blocks",
-                   fnJsonInt(giParamB1), "blocks",
+        + "," + fnMetric("startup_B2_blocks",
+                   fnJsonInt(giParamB2), "blocks",
                    "healthy", "", "",
-                   "DBPARAM -B1",
-                   "Blocos alocados em alternate buffer pool via -B1.")
+                   "DBPARAM -B2",
+                   "Blocos alocados em alternate buffer pool via -B2.")
 
         /* --- Informações complementares de _DbStatus --- */
         + "," + fnMetric("num_areas",
@@ -2223,7 +2326,7 @@ PROCEDURE pCollectStorage:
                    IF iAreasAtRisk = 0 THEN "healthy"
                    ELSE "warning",
                    ">0", ">0",
-                   "FOR EACH _AreaStatus/_AreaExtent WHERE free < 5% AND last extent",
+                   "FOR EACH DICTDB._AreaStatus/_AreaExtent WHERE free < 5% AND last extent",
                    "Áreas com < 5% blocos livres no último extent. 0 = sem risco.")
 
         + "," + fnMetric("areas_at_risk_names",
@@ -2278,8 +2381,8 @@ PROCEDURE pCollectBackup:
 
     /* ============== _DbStatus: datas de backup ===================== */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _DbStatus NO-LOCK NO-ERROR.
-        IF AVAILABLE _DbStatus THEN DO:
+        FIND FIRST DICTDB._DbStatus NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._DbStatus THEN DO:
             cFbDate = STRING(_DbStatus-fbDate) NO-ERROR.
             cIbDate = STRING(_DbStatus-ibDate) NO-ERROR.
             iIbSeq  = INTEGER(_DbStatus-ibSeq) NO-ERROR.
@@ -2392,8 +2495,8 @@ PROCEDURE pCollectLicense:
     DEFINE VARIABLE dLicUsePct   AS DECIMAL NO-UNDO INITIAL ?.
 
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _License NO-LOCK NO-ERROR.
-        IF AVAILABLE _License THEN DO:
+        FIND FIRST DICTDB._License NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._License THEN DO:
             iActiveConns = INTEGER(_Lic-ActiveConns) NO-ERROR.
             iBatchConns  = INTEGER(_Lic-BatchConns)  NO-ERROR.
             iCurrConns   = INTEGER(_Lic-CurrConns)   NO-ERROR.
@@ -2486,19 +2589,28 @@ PROCEDURE pCollectConfiguration:
         cParams = DBPARAM(1).
         IF cParams = ? THEN cParams = "".
 
-        ASSIGN
-            giParamB    = fnExtractParam(cParams, "-B")
-            giParamL    = fnExtractParam(cParams, "-L")
-            giParamN    = fnExtractParam(cParams, "-n")
-            giParamSpin = fnExtractParam(cParams, "-spin")
-            giParamBi   = fnExtractParam(cParams, "-bibufs")
-            giParamB1   = fnExtractParam(cParams, "-B1").
+        /* Le os parametros de startup direto da VST _DbParams.
+           DBPARAM(1) so traz parametros do CLIENTE atual; nao traz
+           -B/-L/-n/-spin que sao do startup do servidor.
+           A VST _DbParams contem TODOS os parametros de startup,
+           inclusive -B (numero de buffers) e -B2 (alternate buffer
+           pool, NAO confundir com -B2 que nao existe). */
+        FOR EACH DICTDB._DbParams NO-LOCK:
+            CASE STRING(_DbParams-Name):
+                WHEN "-B"      THEN giParamB    = INT64(_DbParams-Value) NO-ERROR.
+                WHEN "-B2"     THEN giParamB2   = INT64(_DbParams-Value) NO-ERROR.
+                WHEN "-L"      THEN giParamL    = INT64(_DbParams-Value) NO-ERROR.
+                WHEN "-n"      THEN giParamN    = INT64(_DbParams-Value) NO-ERROR.
+                WHEN "-spin"   THEN giParamSpin = INT64(_DbParams-Value) NO-ERROR.
+                WHEN "-bibufs" THEN giParamBi   = INT64(_DbParams-Value) NO-ERROR.
+            END CASE.
+        END.
     END.
 
     /* ============== _MstrBlk: datas estruturais ================= */
     DO ON ERROR UNDO, LEAVE:
-        FIND FIRST _MstrBlk NO-LOCK NO-ERROR.
-        IF AVAILABLE _MstrBlk THEN DO:
+        FIND FIRST DICTDB._MstrBlk NO-LOCK NO-ERROR.
+        IF AVAILABLE DICTDB._MstrBlk THEN DO:
             cCrDate  = STRING(_MstrBlk-crdate)  NO-ERROR.
             cOprDate = STRING(_MstrBlk-oprdate) NO-ERROR.
         END.
@@ -2535,11 +2647,11 @@ PROCEDURE pCollectConfiguration:
                    "healthy", "", "",
                    "DBPARAM -bibufs", "")
 
-        + "," + fnMetric("startup_B1",
-                   fnJsonInt(giParamB1), "buffers",
+        + "," + fnMetric("startup_B2",
+                   fnJsonInt(giParamB2), "buffers",
                    "healthy", "", "",
-                   "DBPARAM -B1",
-                   "Alternate buffer pool (-B1). Usado para tabelas/índices com acesso alternativo.")
+                   "_DbParams Name=-B2",
+                   "Alternate buffer pool (-B2). Usado para tabelas/indices com acesso alternativo.")
 
         + "," + fnMetric("db_create_date",
                    fnJsonStr(cCrDate), "date",
@@ -2663,6 +2775,19 @@ DO ON ERROR UNDO, LEAVE:
         gcQ  = CHR(34)
         gcLB = CHR(123)
         gcRB = CHR(125).
+
+    /* ============================================================
+       Cria alias DICTDB apontando para o banco conectado em runtime.
+       Permite que o mesmo .r seja executado contra qualquer banco
+       sem o erro 1006 "Database X not connected".
+       Todas as referencias de VST no programa estao qualificadas
+       com DICTDB.<tabela> — em runtime, DICTDB resolve para o
+       banco conectado via -ld.
+       Nota: CREATE ALIAS substitui automaticamente se ja existir;
+       nao e necessario DELETE ALIAS antes. NO-ERROR protege caso
+       LDBNAME(1) retorne ?.
+       ============================================================ */
+    CREATE ALIAS DICTDB FOR DATABASE VALUE(LDBNAME(1)) NO-ERROR.
 
     /* Detecta modo debug via SESSION:PARAMETER.
        Uso: mpro ... -p openedgezbx.p -param "debug=true"
