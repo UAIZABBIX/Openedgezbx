@@ -1,1 +1,0 @@
-mpro -pf <Arquivo.pf> -b -q -p openedgezbx.r > <banco_de_dados>.json 2>/dev/null | tail -1
